@@ -1,0 +1,17 @@
+[package]
+name = "rwinreg"
+version = "0.0.0"
+authors = ["Matthew Seyer <https://github.com/forensicmatt/r-winreg>"]
+
+[dependencies]
+byteorder = "1"
+trace-error = "0.1.5"
+serde = "0.9"
+serde_derive = "0.9"
+serde_json = "0.9"
+encoding = "0.2"
+
+[dependencies.r-winstructs]
+version = "0.1.6"
+branch = "master"
+git = "https://github.com/forensicmatt/r-winstructs"
