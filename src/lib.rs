@@ -5,5 +5,6 @@ extern crate byteorder;
 extern crate encoding;
 extern crate serde;
 pub mod baseblock;
+pub mod hivebin;
 pub mod errors;
 pub mod utils;
