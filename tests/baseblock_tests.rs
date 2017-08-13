@@ -5,8 +5,8 @@ use std::fs::File;
 
 #[test]
 fn baseblock_test_001() {
-    let mut file = File::open(".testdata/NTUSER_0_4096_BASE_BLOCK.DAT").unwrap();
-    let mut buf_reader = BufReader::new(file);
+    let file = File::open(".testdata/NTUSER_0_4096_BASE_BLOCK.DAT").unwrap();
+    let buf_reader = BufReader::new(file);
     let baseblock = baseblock::BaseBlock::new(buf_reader).unwrap();
 
     assert_eq!(baseblock.signature, 1718052210);
