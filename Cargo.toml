@@ -5,6 +5,7 @@ authors = ["Matthew Seyer <https://github.com/forensicmatt/r-winreg>"]
 
 [dependencies]
 byteorder = "1"
+bitflags = "*"
 trace-error = "0.1.5"
 serde = "0.9"
 serde_derive = "0.9"

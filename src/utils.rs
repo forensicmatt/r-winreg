@@ -49,6 +49,19 @@ pub fn to_hex_string(bytes: &Vec<u8>) -> String {
     strs.join("")
 }
 
+pub fn uft16_from_u8_vec(bytes: &Vec<u8>) -> Result<String,RegError> {
+    let utf16_string = match UTF_16LE.decode(bytes,DecoderTrap::Ignore) {
+        Ok(utf16) => utf16,
+        Err(error) => return Err(
+            RegError::utf16_decode_error(
+                format!("Error decoding utf16. [{}]",error)
+            )
+        )
+    };
+
+    Ok(utf16_string)
+}
+
 pub fn read_string_u8_w_size<R: Read>(mut reader: R) -> Result<String,RegError> {
     // Reads into a string with the size preceeding the string
     let str_size = reader.read_u8()?;
