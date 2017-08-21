@@ -13,6 +13,17 @@ fn test_nk_01() {
     println!("{}",json_str);
 }
 
+fn test_vk_01() {
+    let file = File::open(".testdata/NTUSER_4680_40_CELL_VK.DAT").unwrap();
+
+    let key_node = hivebin::Cell::new(file).unwrap();
+    println!("{:#?}",key_node);
+
+    let json_str = serde_json::to_string(&key_node).unwrap();
+    println!("{}",json_str);
+}
+
 fn main(){
     test_nk_01();
+    test_vk_01();
 }

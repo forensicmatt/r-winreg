@@ -67,7 +67,7 @@ pub enum CellData{
     // HashLeaf(),
     // IndexRoot(),
     KeyNode(KeyNode),
-    // KeyValue(),
+    ValueKey(ValueKey),
     // KeySecurity(),
     // BigData()
 }
@@ -92,7 +92,10 @@ impl Cell {
         match signature {
             27502 => { // 'nk'
                 let data = CellData::KeyNode(
-                    KeyNode::new(Cursor::new(buffer),_offset + 6)?
+                    KeyNode::new(
+                        Cursor::new(buffer),
+                        _offset + 6
+                    )?
                 );
                 Ok(
                     Cell {
@@ -103,6 +106,22 @@ impl Cell {
                     }
                 )
             },
+            27510 => { // 'vk'
+                let data = CellData::ValueKey(
+                    ValueKey::new(
+                        Cursor::new(buffer),
+                        _offset + 6
+                    )?
+                );
+                Ok(
+                    Cell {
+                        _offset: _offset,
+                        size: size,
+                        signature: signature,
+                        data: data
+                    }
+                )
+            }
             _ => {
                 let data = CellData::UnhandledCellData(
                     UnhandledCellData(buffer)
@@ -125,6 +144,92 @@ impl Cell {
         } else {
             false
         }
+    }
+}
+
+bitflags! {
+    pub struct VkFlags: u16 {
+        const VK_VALUE_COMP_NAME = 0x0001;
+    }
+}
+impl fmt::Display for VkFlags {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,"{}",self.bits())
+    }
+}
+impl ser::Serialize for VkFlags {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: ser::Serializer
+    {
+        serializer.serialize_str(&format!("{:?}", self))
+    }
+}
+pub enum VkDataType {
+    REG_NONE = 0x00000000,
+    REG_SZ = 0x00000001,
+    REG_EXPAND_SZ = 0x00000002,
+    REG_BINARY = 0x00000003,
+    REG_DWORD_LITTLE_ENDIAN = 0x00000004,
+    REG_DWORD_BIG_ENDIAN = 0x00000005,
+    REG_LINK = 0x00000006,
+    REG_MULTI_SZ = 0x00000007,
+    REG_RESOURCE_LIST = 0x00000008,
+    REG_FULL_RESOURCE_DESCRIPTOR = 0x00000009,
+    REG_RESOURCE_REQUIREMENTS_LIST = 0x0000000a,
+    REG_QWORD_LITTLE_ENDIAN = 0x0000000b
+}
+// vk
+#[derive(Serialize, Debug)]
+pub struct ValueKey {
+    #[serde(skip_serializing)]
+    _offset: u64,
+    pub value_name_size: u16,
+    pub data_size: u32,
+    pub data_offset: u32,
+    pub data_type: u32,
+    pub flags: VkFlags,
+    unknown1: u16,
+    // 18 bytes
+    pub value_name: String,
+    padding: utils::ByteArray
+}
+impl ValueKey {
+    pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<ValueKey,RegError> {
+        let _offset = offset;
+        let value_name_size = reader.read_u16::<LittleEndian>()?;
+        let data_size = reader.read_u32::<LittleEndian>()?;
+        let data_offset = reader.read_u32::<LittleEndian>()?;
+        let data_type = reader.read_u32::<LittleEndian>()?;
+        let flags = VkFlags::from_bits_truncate(
+            reader.read_u16::<LittleEndian>()?
+        );
+        let unknown1 = reader.read_u16::<LittleEndian>()?;
+
+        let mut name_buffer = vec![0; value_name_size as usize];
+        reader.read_exact(name_buffer.as_mut_slice())?;
+        let value_name = match flags.contains(VK_VALUE_COMP_NAME) {
+            true => String::from_utf8(name_buffer)?,
+            false => utils::uft16_from_u8_vec(&name_buffer)?
+        };
+
+        let pad_size = 8 - ((_offset + 18 + value_name_size as u64) % 8);
+        let mut padding_buffer = vec![0; pad_size as usize];
+        reader.read_exact(padding_buffer.as_mut_slice())?;
+        let padding = utils::ByteArray(padding_buffer);
+
+        Ok(
+            ValueKey {
+                _offset: _offset,
+                value_name_size: value_name_size,
+                data_size: data_size,
+                data_offset: data_offset,
+                data_type: data_type,
+                flags: flags,
+                unknown1: unknown1,
+                value_name: value_name,
+                padding: padding
+            }
+        )
     }
 }
 
@@ -157,6 +262,7 @@ impl ser::Serialize for KeyNodeFlags {
     }
 }
 
+// nk
 #[derive(Serialize, Debug)]
 pub struct KeyNode {
     #[serde(skip_serializing)]
@@ -220,7 +326,8 @@ impl KeyNode {
 
         // 8 byte alignment
         let pad_size = 8 - ((_offset + 74 + key_name_size as u64) % 8);
-        println!("pad_size: {}",pad_size);
+
+        // println!("pad_size: {}",pad_size);
         let mut padding_buffer = vec![0; pad_size as usize];
         reader.read_exact(padding_buffer.as_mut_slice())?;
         let padding = utils::ByteArray(padding_buffer);
