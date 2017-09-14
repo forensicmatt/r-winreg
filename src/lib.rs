@@ -1,6 +1,8 @@
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate trace_error;
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate log;
+extern crate seek_bufread;
 extern crate rwinstructs;
 extern crate byteorder;
 extern crate encoding;
@@ -9,3 +11,4 @@ pub mod baseblock;
 pub mod hivebin;
 pub mod errors;
 pub mod utils;
+pub mod hive;

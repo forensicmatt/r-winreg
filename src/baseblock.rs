@@ -97,4 +97,12 @@ impl BaseBlock {
             }
         )
     }
+
+    pub fn get_root_offset(&self)->u32{
+        self.root_cell_offset
+    }
+
+    pub fn hbin_size(&self)->u32{
+        self.hive_bins_data_size
+    }
 }

@@ -1,3 +1,4 @@
+use rwinstructs::security::{SecDescError};
 use std::string::FromUtf8Error;
 use std::io;
 use std::fmt;
@@ -8,7 +9,8 @@ pub enum ErrorKind {
     IoError,
     Utf16Error,
     FromUtf8Error,
-    ValidationError
+    ValidationError,
+    SecDescParseError
 }
 
 #[derive(Debug)]
@@ -51,6 +53,15 @@ impl From<io::Error> for RegError {
         RegError {
             message: format!("{}",err),
             kind: ErrorKind::IoError,
+            trace: backtrace!()
+        }
+    }
+}
+impl From<SecDescError> for RegError {
+    fn from(err: SecDescError) -> Self {
+        RegError {
+            message: format!("{:?}",err),
+            kind: ErrorKind::SecDescParseError,
             trace: backtrace!()
         }
     }
