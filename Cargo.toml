@@ -4,6 +4,8 @@ version = "0.0.0"
 authors = ["Matthew Seyer <https://github.com/forensicmatt/r-winreg>"]
 
 [dependencies]
+log = "0.3"
+env_logger = "0.3"
 byteorder = "1"
 bitflags = "*"
 trace-error = "0.1.5"
@@ -11,8 +13,9 @@ serde = "0.9"
 serde_derive = "0.9"
 serde_json = "0.9"
 encoding = "0.2"
+seek_bufread = "~1.2"
 
 [dependencies.r-winstructs]
-version = "0.1.6"
+version = "0.3.0"
 branch = "master"
 git = "https://github.com/forensicmatt/r-winstructs"
