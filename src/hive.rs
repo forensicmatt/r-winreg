@@ -7,6 +7,7 @@ use errors::RegError;
 use std::io::Read;
 use std::io::{Seek,SeekFrom};
 use std::fs::File;
+use std::rc::Rc;
 
 pub const HBIN_START_OFFSET: u64 = 4096;
 
@@ -17,8 +18,9 @@ pub struct Hive {
     baseblock: BaseBlock,
     next_node_offset: u64,
     next_hbin_offset: u64,
-    current_node: Option<Box<NodeKey>>,
-    parent_node: Option<Box<NodeKey>>
+    current_node: Option<NodeKey>,
+    node_stack: Vec<NodeKey>,
+    path_stack: Vec<String>
 }
 impl Hive {
     pub fn new(filename: &str) -> Result<Hive,RegError>{
@@ -38,7 +40,9 @@ impl Hive {
 
         // Get first node
         let current_node = None;
-        let parent_node = None;
+
+        let node_stack: Vec<NodeKey> = Vec::new();
+        let path_stack: Vec<String> = Vec::new();
 
         Ok(
             Hive {
@@ -47,7 +51,8 @@ impl Hive {
                 next_node_offset: next_node_offset,
                 next_hbin_offset: next_hbin_offset,
                 current_node: current_node,
-                parent_node: parent_node
+                node_stack: node_stack,
+                path_stack: path_stack
             }
         )
     }
@@ -67,11 +72,6 @@ impl Hive {
         Ok(
             Cell::new(&mut self.source, false)?
         )
-    }
-
-    pub fn get_next_value(&mut self)->Result<Option<Cell>,RegError>{
-
-        Ok(None)
     }
 
     pub fn get_next_hbin(&mut self)->Result<Option<HiveBin>,RegError>{
@@ -106,8 +106,8 @@ impl Hive {
         )
     }
 
-    fn set_current_node(&mut self, nk: NodeKey){
-        self.current_node = Some(Box::new(nk));
+    fn get_full_path(&self)->String{
+        self.path_stack.join("/")
     }
 }
 
@@ -126,8 +126,11 @@ impl Iterator for Hive {
 
             match cell_key_node.data {
                 CellData::NodeKey(nk) => {
+                    self.path_stack.push(
+                        nk.get_name()
+                    );
                     self.current_node = Some(
-                        Box::new(nk)
+                        nk
                     );
                 },
                 _ => {
@@ -137,12 +140,12 @@ impl Iterator for Hive {
         }
 
         loop {
-            let mut next_node: Option<Box<NodeKey>> = None;
+            let mut next_node: Option<NodeKey> = None;
             match self.current_node {
                 Some(ref mut current_node) => {
                     println!(
                         "node name: {}; offset: {}",
-                        current_node.key_name,
+                        self.path_stack.join("/"),
                         current_node.get_offset()
                     );
 
@@ -165,7 +168,9 @@ impl Iterator for Hive {
                             Some(cell) => {
                                 return Some(cell);
                             },
-                            None => {}
+                            None => {
+                                println!("No more values for current node!");
+                            }
                         }
                     }
 
@@ -184,23 +189,31 @@ impl Iterator for Hive {
                             }
                         };
 
-                        match sub_node {
-                            Some(nk) => {
-                                next_node = Some(Box::new(nk));
-                            },
-                            None => {}
+                        if sub_node.is_some(){
+                            let nk = sub_node.unwrap();
+                            self.path_stack.push(
+                                nk.get_name()
+                            );
+                            self.node_stack.push(
+                                current_node.clone()
+                            );
+
+                            next_node = Some(nk);
+                        } else {
+                            next_node = self.node_stack.pop();
+                            self.path_stack.pop();
                         }
+                    } else {
+                        next_node = self.node_stack.pop();
+                        self.path_stack.pop();
                     }
                 },
-                None => {}
+                None => {
+                    break;
+                }
             }
 
-            if next_node.is_some() {
-                self.parent_node = self.current_node.clone();
-                self.current_node = next_node;
-            } else {
-                self.current_node = self.parent_node.clone();
-            }
+            self.current_node = next_node;
         }
 
         None

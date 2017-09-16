@@ -10,6 +10,7 @@ use std::io::Read;
 use std::io::{Seek,SeekFrom};
 use std::io::{Cursor};
 use std::fmt;
+use std::mem::transmute;
 use std::slice::Iter;
 
 #[derive(Serialize,Debug)]
@@ -141,7 +142,7 @@ impl HiveBinHeader {
 pub enum CellData{
     UnhandledCellData(UnhandledCellData),
     UnknownData(UnhandledCellData),
-    // IndexLeaf(),
+    IndexLeaf(IndexLeaf),
     FastLeaf(FastLeaf),
     // HashLeaf(),
     // IndexRoot(),
@@ -250,8 +251,10 @@ impl Cell {
                     )
                 },
                 26988 => { // 'li'
-                    CellData::UnhandledCellData(
-                        UnhandledCellData(buffer)
+                    CellData::IndexLeaf(
+                        IndexLeaf::new(
+                            Cursor::new(buffer)
+                        )?
                     )
                 },
                 26994 => { // 'ri'
@@ -326,7 +329,6 @@ pub struct FastLeaf{
 }
 impl FastLeaf{
     pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<FastLeaf,RegError> {
-        let _offset = reader.seek(SeekFrom::Current(0))?;
         let element_count = reader.read_u16::<LittleEndian>()?;
         let mut elements: Vec<FastElement> = Vec::new();
         let next_index = 0;
@@ -396,6 +398,58 @@ impl FastElement{
 
     pub fn get_node_offset(&self)->u32{
         self.node_offset
+    }
+}
+
+// li
+#[derive(Serialize, Debug, Clone)]
+pub struct IndexLeaf{
+    element_count: u16,
+    elements: Vec<u32>,
+    next_index: usize
+}
+impl IndexLeaf{
+    pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<IndexLeaf,RegError> {
+        let element_count = reader.read_u16::<LittleEndian>()?;
+        let mut elements: Vec<u32> = Vec::new();
+        let next_index = 0;
+
+        for i in 0..element_count{
+            let element = reader.read_u32::<LittleEndian>()?;
+            elements.push(element);
+        }
+
+        Ok(
+            IndexLeaf{
+                element_count: element_count,
+                elements: elements,
+                next_index: next_index
+            }
+        )
+    }
+
+    pub fn get_next_node<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<Option<NodeKey>,RegError>{
+        // Check if current index is within offset list range
+        if self.next_index + 1 > self.elements.len() {
+            Ok(None)
+        } else {
+            let cell_offset = self.elements[self.next_index];
+            self.next_index += 1;
+
+            reader.seek(
+                SeekFrom::Start(HBIN_START_OFFSET + cell_offset as u64)
+            )?;
+
+            let mut cell = Cell::new(&mut reader, false)?;
+            match cell.data {
+                CellData::NodeKey(nk) => {
+                    Ok(Some(nk))
+                }
+                _ => {
+                    panic!("Not sure what to do here...")
+                }
+            }
+        }
     }
 }
 
@@ -537,29 +591,42 @@ impl ValueKey {
     }
 
     pub fn read_value_from_hive<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<bool,RegError>{
-        // seek to data value
-        reader.seek(SeekFrom::Start(
-            HBIN_START_OFFSET + self.data_offset as u64
-        ))?;
+        //check most significant bit if data resides in offset
+        if self.data_size >> 31 == 0 {
+            // data is not stored in offset, so lets seek to the offset
+            // seek to data value
+            reader.seek(SeekFrom::Start(
+                HBIN_START_OFFSET + self.data_offset as u64
+            ))?;
 
-        // read data
-        // datasize is the firt 4 bytes.
-        let data_size = reader.read_i32::<LittleEndian>()?.abs() - 4;
-        // lets verify that datasize here matches datasize in the struct
-        if data_size as u32 != self.data_size {
-            RegError::validation_error(
-                format!("data_size [{}] is not equal to the ValueKey.data_size [{}].",
-                data_size,
-                self.data_size)
-            );
+            // read data
+            // datasize is the firt 4 bytes.
+            let data_size = reader.read_i32::<LittleEndian>()?.abs() - 4;
+            // lets verify that datasize here matches datasize in the struct
+            if data_size as u32 != self.data_size {
+                RegError::validation_error(
+                    format!("data_size [{}] is not equal to the ValueKey.data_size [{}].",
+                    data_size,
+                    self.data_size)
+                );
+            }
+            let mut raw_buffer = vec![0; data_size as usize];
+            reader.read_exact(&mut raw_buffer)?;
+
+            // set data
+            self.data = Some(raw_buffer);
+
+            Ok(true)
+        } else {
+            let raw_buffer: [u8; 4] = unsafe {
+                transmute(self.data_offset.to_le())
+            };
+
+            // set data
+            self.data = Some(raw_buffer.to_vec());
+
+            Ok(true)
         }
-        let mut raw_buffer = vec![0; data_size as usize];
-        reader.read_exact(&mut raw_buffer)?;
-
-        // set data
-        self.data = Some(raw_buffer);
-
-        Ok(true)
     }
 }
 
@@ -637,7 +704,6 @@ impl ValueKeyList {
         loop {
             let _offset = reader.seek(SeekFrom::Current(0))?;
 
-            println!("found value offset at offset: {}",_offset);
             if self.next_index == self.number_of_values as usize {
                 // For now excape out once we it the number of values
                 println!("I should be leaving now at offset: {}",_offset);
@@ -656,7 +722,6 @@ impl ValueKeyList {
                 return Ok(None);
             } else {
                 let cell_offset = self.offset_list[self.next_index];
-                println!("looking for value at offset: {}",cell_offset);
 
                 // Can we have cells that have 0 offset befor a cell that has a real offset?
                 if cell_offset == 0 {
@@ -788,7 +853,6 @@ impl NodeKey {
         // let mut padding_buffer = vec![0; pad_size as usize];
         // reader.read_exact(padding_buffer.as_mut_slice())?;
         // let padding = utils::ByteArray(padding_buffer);
-
         let value_list = None;
         let sub_key_list = None;
 
@@ -820,6 +884,10 @@ impl NodeKey {
                 sub_key_list: sub_key_list
             }
         )
+    }
+
+    pub fn get_name(&self)->String{
+        self.key_name.clone()
     }
 
     pub fn get_offset(&self)->u64{
@@ -894,6 +962,10 @@ impl NodeKey {
             Some(ref mut list) => {
                 match list.data {
                     CellData::FastLeaf(ref mut lf) => {
+                        let nk = lf.get_next_node(&mut reader)?;
+                        Ok(nk)
+                    },
+                    CellData::IndexLeaf(ref mut lf) => {
                         let nk = lf.get_next_node(&mut reader)?;
                         Ok(nk)
                     },
