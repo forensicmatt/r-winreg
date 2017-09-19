@@ -37,8 +37,6 @@ fn test_hive_02() {
     let mut hive = Hive::new(".testdata/NTUSER.DAT").unwrap();
     println!("{}",serde_json::to_string(&hive).unwrap());
 
-    // hive.set_next_node_offset(0x10B0);
-
     for value in hive {
         println!("{}",serde_json::to_string(&value).unwrap());
     }

@@ -1,8 +1,11 @@
 use seek_bufread::BufReader;
 use baseblock::BaseBlock;
+use record::Record;
 use hivebin::HiveBin;
 use hivebin::{Cell,CellData};
 use hivebin::{NodeKey};
+use hivebin::{SecurityKey};
+use rwinstructs::security::SecurityDescriptor;
 use errors::RegError;
 use std::io::Read;
 use std::io::{Seek,SeekFrom};
@@ -112,7 +115,7 @@ impl Hive {
 }
 
 impl Iterator for Hive {
-    type Item = Cell;
+    type Item = Record;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_node.is_none() {
@@ -141,13 +144,18 @@ impl Iterator for Hive {
 
         loop {
             let mut next_node: Option<NodeKey> = None;
+            let fullpath = self.get_full_path();
+
             match self.current_node {
                 Some(ref mut current_node) => {
-                    println!(
-                        "node name: {}; offset: {}",
-                        self.path_stack.join("/"),
-                        current_node.get_offset()
-                    );
+                    // Check if security key has been read
+                    if current_node.has_sec_key(){
+                        if current_node.needs_sec_key() {
+                            current_node.set_sec_key(
+                                &mut self.source
+                            );
+                        }
+                    }
 
                     // Check if the current node had values
                     if current_node.has_values(){
@@ -158,20 +166,38 @@ impl Iterator for Hive {
                         }
 
                         let value_cell = match current_node.get_next_value(&mut self.source) {
-                            Ok(value_cell) => value_cell,
+                            Ok(option) => {
+                                match option{
+                                    Some(cell) => {
+                                        match cell.data {
+                                            CellData::ValueKey(value) => {
+                                                let descriptor: Option<SecurityDescriptor> = match current_node.get_sec_key() {
+                                                    Some(sec_key) => {
+                                                        Some(sec_key.get_descriptor())
+                                                    },
+                                                    None => None
+                                                };
+                                                let mut record = Record::new(
+                                                    value,
+                                                    descriptor
+                                                );
+                                                record.set_fullpath(
+                                                    fullpath
+                                                );
+                                                return Some(record);
+                                            },
+                                            _ => {
+                                                panic!("Unhandled cell data type: {:?}",cell);
+                                            }
+                                        }
+                                    },
+                                    None => {}
+                                }
+                            },
                             Err(error) => {
                                 panic!("{}",error);
                             }
                         };
-
-                        match value_cell{
-                            Some(cell) => {
-                                return Some(cell);
-                            },
-                            None => {
-                                println!("No more values for current node!");
-                            }
-                        }
                     }
 
                     // Check if the current node has sub keys

@@ -9,6 +9,7 @@ extern crate encoding;
 extern crate serde;
 pub mod baseblock;
 pub mod hivebin;
+pub mod record;
 pub mod errors;
 pub mod utils;
 pub mod hive;

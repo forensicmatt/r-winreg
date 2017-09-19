@@ -22,7 +22,6 @@ pub struct HiveBin {
 impl HiveBin{
     pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<HiveBin,RegError> {
         let _offset = reader.seek(SeekFrom::Current(0))?;
-        debug!("reading hivebin at offset: {}", _offset);
 
         let header = HiveBinHeader::new(
             &mut reader
@@ -458,10 +457,15 @@ impl IndexLeaf{
 pub struct SecurityKey {
     #[serde(skip_serializing)]
     _offset: u64,
+    #[serde(skip_serializing)]
     pub unknown1: u16,
+    #[serde(skip_serializing)]
     pub previous_sec_key_offset: u32,
+    #[serde(skip_serializing)]
     pub next_sec_key_offset: u32,
+    #[serde(skip_serializing)]
     pub reference_count: u32,
+    #[serde(skip_serializing)]
     pub descriptor_size: u32,
     pub descriptor: SecurityDescriptor
 }
@@ -493,6 +497,10 @@ impl SecurityKey {
                 descriptor: descriptor
             }
         )
+    }
+
+    pub fn get_descriptor(&self)->SecurityDescriptor{
+        self.descriptor.clone()
     }
 }
 
@@ -534,16 +542,21 @@ pub enum VkDataType {
 pub struct ValueKey {
     #[serde(skip_serializing)]
     _offset: u64,
+    #[serde(skip_serializing)]
     pub value_name_size: u16,
+    #[serde(skip_serializing)]
     pub data_size: u32,
+    #[serde(skip_serializing)]
     pub data_offset: u32,
     pub data_type: u32,
     pub flags: VkFlags,
+    #[serde(skip_serializing)]
     unknown1: u16,
     // 18 bytes
     pub value_name: String,
     // padding: utils::ByteArray
     pub data: Option<Vec<u8>>,
+    #[serde(skip_serializing)]
     pub data_slack: Option<Vec<u8>>
 }
 impl ValueKey {
@@ -628,6 +641,10 @@ impl ValueKey {
             Ok(true)
         }
     }
+
+    pub fn get_name(&self)->String{
+        self.value_name.clone()
+    }
 }
 
 #[derive(Clone)]
@@ -706,7 +723,6 @@ impl ValueKeyList {
 
             if self.next_index == self.number_of_values as usize {
                 // For now excape out once we it the number of values
-                println!("I should be leaving now at offset: {}",_offset);
                 return Ok(None);
             }
 
@@ -811,7 +827,8 @@ pub struct NodeKey {
     #[serde(skip_serializing)]
     value_list: Option<Box<ValueKeyList>>,
     #[serde(skip_serializing)]
-    sub_key_list: Option<Box<Cell>>
+    sub_key_list: Option<Box<Cell>>,
+    security_key: Option<SecurityKey>
 }
 impl NodeKey {
     pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<NodeKey,RegError> {
@@ -855,6 +872,7 @@ impl NodeKey {
         // let padding = utils::ByteArray(padding_buffer);
         let value_list = None;
         let sub_key_list = None;
+        let security_key = None;
 
         Ok(
             NodeKey {
@@ -881,7 +899,8 @@ impl NodeKey {
                 key_name: key_name,
                 // padding: padding,
                 value_list: value_list,
-                sub_key_list: sub_key_list
+                sub_key_list: sub_key_list,
+                security_key: security_key
             }
         )
     }
@@ -910,12 +929,28 @@ impl NodeKey {
         }
     }
 
+    pub fn has_sec_key(&self)->bool{
+        if self.offset_security_key == 0xffffffff {
+            false
+        } else {
+            true
+        }
+    }
+
     pub fn needs_value_list(&self)->bool{
         self.value_list.is_none()
     }
 
     pub fn needs_sub_key_list(&self)->bool{
         self.sub_key_list.is_none()
+    }
+
+    pub fn needs_sec_key(&self)->bool{
+        if self.security_key.is_some() {
+            false
+        } else {
+            true
+        }
     }
 
     pub fn set_value_list<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<bool,RegError>{
@@ -944,6 +979,29 @@ impl NodeKey {
         );
 
         Ok(true)
+    }
+
+    pub fn set_sec_key<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<bool,RegError>{
+        if self.offset_security_key != 0xffffffff {
+            // seek to cell
+            reader.seek(SeekFrom::Start(
+                HBIN_START_OFFSET + self.offset_security_key as u64
+            ))?;
+
+            let cell = Cell::new(&mut reader, false)?;
+            self.security_key = match cell.data {
+                CellData::SecurityKey(sk) => Some(
+                    sk
+                ),
+                _ => {
+                    panic!("Cell is not a security key.");
+                }
+            };
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub fn get_next_value<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<Option<Cell>,RegError>{
@@ -976,6 +1034,10 @@ impl NodeKey {
             },
             None => Ok(None)
         }
+    }
+
+    pub fn get_sec_key(&self)->Option<SecurityKey>{
+            self.security_key.clone()
     }
 }
 
