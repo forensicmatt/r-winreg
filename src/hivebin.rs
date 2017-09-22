@@ -595,7 +595,7 @@ impl ValueKey {
 
         let mut name_buffer = vec![0; value_name_size as usize];
         reader.read_exact(name_buffer.as_mut_slice())?;
-        let value_name = match flags.contains(VK_VALUE_COMP_NAME) {
+        let value_name = match flags.contains(VkFlags::VK_VALUE_COMP_NAME) {
             true => String::from_utf8(name_buffer)?,
             false => utils::uft16_from_u8_vec(&name_buffer)?
         };
@@ -703,7 +703,7 @@ impl ValueKey {
                         );
                     },
                     0x00000001 => { //REG_SZ
-                        if self.flags.contains(VK_VALUE_COMP_NAME) {
+                        if self.flags.contains(VkFlags::VK_VALUE_COMP_NAME) {
                             let d_size = self.get_size();
 
                             if d_size == 0 {
@@ -990,7 +990,7 @@ impl NodeKey {
 
         let mut name_buffer = vec![0; key_name_size as usize];
         reader.read_exact(name_buffer.as_mut_slice())?;
-        let key_name = match flags.contains(KEY_COMP_NAME) {
+        let key_name = match flags.contains(NodeKeyFlags::KEY_COMP_NAME) {
             true => String::from_utf8(name_buffer)?,
             false => utils::uft16_from_u8_vec(&name_buffer)?
         };

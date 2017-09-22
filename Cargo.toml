@@ -1,6 +1,6 @@
 [package]
 name = "rwinreg"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Matthew Seyer <https://github.com/forensicmatt/r-winreg>"]
 
 [lib]
@@ -10,7 +10,7 @@ name = "rwinreg"
 log = "0.3"
 env_logger = "0.3"
 byteorder = "1"
-bitflags = "*"
+bitflags = "1.0"
 trace-error = "0.1.5"
 serde = "0.9"
 serde_derive = "0.9"
