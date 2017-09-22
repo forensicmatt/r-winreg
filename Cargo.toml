@@ -3,6 +3,9 @@ name = "rwinreg"
 version = "0.0.0"
 authors = ["Matthew Seyer <https://github.com/forensicmatt/r-winreg>"]
 
+[lib]
+name = "rwinreg"
+
 [dependencies]
 log = "0.3"
 env_logger = "0.3"
