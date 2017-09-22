@@ -2,6 +2,7 @@ extern crate rwinreg;
 extern crate env_logger;
 extern crate serde_json;
 extern crate seek_bufread;
+use rwinreg::hive;
 use rwinreg::hive::Hive;
 use rwinreg::hivebin::HiveBin;
 use rwinreg::errors::RegError;
@@ -42,8 +43,17 @@ fn test_hive_02() {
     }
 }
 
+fn test_sig_01() {
+    let result1 = hive::has_hive_signature(".testdata/NTUSER.DAT").unwrap();
+    println!("result: {}",result1);
+
+    let result2 = hive::has_hive_signature(".testdata/NTUSER_4096_4096_HIVEBIN.DAT").unwrap();
+    println!("result: {}",result2);
+}
+
 fn main(){
     env_logger::init().unwrap();
+    test_sig_01();
     test_hive_02();
     // test_hive_01();
 }

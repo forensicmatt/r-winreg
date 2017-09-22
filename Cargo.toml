@@ -1,6 +1,6 @@
 [package]
 name = "rwinreg"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Matthew Seyer <https://github.com/forensicmatt/r-winreg>"]
 
 [lib]

@@ -1,3 +1,4 @@
+use byteorder::{ReadBytesExt, LittleEndian};
 use seek_bufread::BufReader;
 use baseblock::BaseBlock;
 use record::Record;
@@ -10,9 +11,18 @@ use errors::RegError;
 use std::io::Read;
 use std::io::{Seek,SeekFrom};
 use std::fs::File;
-use std::rc::Rc;
 
 pub const HBIN_START_OFFSET: u64 = 4096;
+
+pub fn has_hive_signature(filename: &str)->Result<bool,RegError>{
+    let mut hive_fh = File::open(filename)?;
+    let signature = hive_fh.read_u32::<LittleEndian>()?;
+    if signature != 1718052210 {
+        Ok(false)
+    } else {
+        Ok(true)
+    }
+}
 
 #[derive(Serialize,Debug)]
 pub struct Hive {
