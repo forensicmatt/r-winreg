@@ -1,6 +1,15 @@
 # r-winreg
 Windows Registry Library
 
+## Decoded Value Data
+The following are how registry values are currently being decoded. The ValueKey's decode_data method controls the decoding.
+
+| Data Type | Decoded Value |
+| --- | --- |
+| 0x00000000 [REG_NONE] | Hex string |
+| 0x00000001 [REG_SZ] | u16 le or u8 decoded String |
+| All Others | Hex string |
+
 ## JSON Key Output
 ```json
 {
