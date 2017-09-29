@@ -1,4 +1,4 @@
-use hivebin::{ValueKey};
+use vk::{ValueKey};
 use rwinstructs::security::SecurityDescriptor;
 
 #[derive(Serialize,Debug)]

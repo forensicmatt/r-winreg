@@ -5,10 +5,8 @@ use record::Record;
 use hivebin::HiveBin;
 use hivebin::{Cell,CellData};
 use hivebin::{NodeKey};
-use hivebin::{SecurityKey};
 use rwinstructs::security::SecurityDescriptor;
 use errors::RegError;
-use std::io::Read;
 use std::io::{Seek,SeekFrom};
 use std::fs::File;
 
@@ -175,7 +173,7 @@ impl Iterator for Hive {
                             );
                         }
 
-                        let value_cell = match current_node.get_next_value(&mut self.source) {
+                        match current_node.get_next_value(&mut self.source) {
                             Ok(option) => {
                                 match option{
                                     Some(cell) => {
@@ -207,7 +205,7 @@ impl Iterator for Hive {
                             Err(error) => {
                                 panic!("{}",error);
                             }
-                        };
+                        }
                     }
 
                     // Check if the current node has sub keys

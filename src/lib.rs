@@ -13,3 +13,4 @@ pub mod record;
 pub mod errors;
 pub mod utils;
 pub mod hive;
+pub mod vk;
