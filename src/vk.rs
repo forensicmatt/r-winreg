@@ -1,4 +1,4 @@
-use byteorder::{ReadBytesExt, LittleEndian};
+use byteorder::{ReadBytesExt, LittleEndian, BigEndian};
 use serde::ser::{SerializeStruct};
 use utils;
 use hive::HBIN_START_OFFSET;
@@ -9,6 +9,14 @@ use std::io::{Seek,SeekFrom};
 use std::io::{Cursor};
 use std::fmt;
 use std::mem::transmute;
+
+#[derive(Serialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum Data {
+    None,
+    String(String),
+    Int32(i32),
+}
 
 bitflags! {
     pub struct VkFlags: u16 {
@@ -189,22 +197,13 @@ impl ValueKey {
         self.value_name.clone()
     }
 
-    pub fn decode_data(&self)->Option<String>{
+    pub fn decode_data(&self)->Option<Data>{
         match self.data {
             Some(ref data) => {
                 match self.data_type.0 {
                     0x00000000 => { //REG_NONE
-                        // return Some(
-                        //     utils::to_hex_string(
-                        //         &data[0..self.data_size as usize].to_vec()
-                        //     )
-                        // );
-                        // return None;
-
                         return Some(
-                            utils::to_hex_string(
-                                &data[0..self.get_size() as usize].to_vec()
-                            )
+                            Data::None
                         );
                     },
                     0x00000001 => { //REG_SZ
@@ -228,7 +227,9 @@ impl ValueKey {
                                 }
                             };
 
-                            return Some(value);
+                            return Some(
+                                Data::String(value)
+                            );
                         } else {
                             let d_size = self.get_size();
 
@@ -249,15 +250,99 @@ impl ValueKey {
                                 }
                             };
 
-                            return Some(value);
+                            return Some(
+                                Data::String(value)
+                            );
                         }
                     },
-                    _ => {
-                        return Some(
-                            utils::to_hex_string(
-                                &data[0..self.get_size() as usize].to_vec()
-                            )
+                    0x00000002 => { //REG_EXPAND_SZ
+                        if self.flags.contains(VkFlags::VK_VALUE_COMP_NAME) {
+                            let d_size = self.get_size();
+
+                            if d_size == 0 {
+                                return None;
+                            }
+
+                            let value = match utils::read_string_u16_till_null(
+                                Cursor::new(
+                                    &data[0..d_size as usize].to_vec()
+                                ))
+                            {
+                                Ok(value) => {
+                                    value
+                                },
+                                Err(error) => {
+                                    panic!("{:?} {} {}",self,error,backtrace!())
+                                }
+                            };
+
+                            return Some(
+                                Data::String(value)
+                            );
+                        } else {
+                            let d_size = self.get_size();
+
+                            if d_size == 0 {
+                                return None;
+                            }
+
+                            let value = match utils::read_string_u8_till_null(
+                                Cursor::new(
+                                    &data[0..d_size as usize].to_vec()
+                                ))
+                            {
+                                Ok(value) => {
+                                    value
+                                },
+                                Err(error) => {
+                                    panic!("{:?}",error)
+                                }
+                            };
+
+                            return Some(
+                                Data::String(value)
+                            );
+                        }
+                    },
+                    0x00000003 => { //REG_BINARY
+                        let value = utils::to_hex_string(
+                            &data[0..self.get_size() as usize].to_vec()
                         );
+                        return Some(Data::String(value));
+                    }
+                    0x00000004 => { //REG_DWORD_LITTLE_ENDIAN
+                        let value = match Cursor::new(
+                            &data[0..self.get_size() as usize].to_vec()
+                        ).read_i32::<LittleEndian>(){
+                            Ok(value) => {
+                                value
+                            },
+                            Err(error) => {
+                                panic!("{:?}",error)
+                            }
+                        };
+
+                        return Some(Data::Int32(value));
+                    },
+                    0x00000005 => { //REG_DWORD_BIG_ENDIAN
+                        let value = match Cursor::new(
+                            &data[0..self.get_size() as usize].to_vec()
+                        ).read_i32::<BigEndian>(){
+                            Ok(value) => {
+                                value
+                            },
+                            Err(error) => {
+                                panic!("{:?}",error)
+                            }
+                        };
+
+                        return Some(Data::Int32(value));
+                    },
+                    _ => {
+                        let value = utils::to_hex_string(
+                            &data[0..self.get_size() as usize].to_vec()
+                        );
+                        return Some(Data::String(value));
                     }
                 }
             },

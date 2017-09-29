@@ -8,6 +8,10 @@ The following are how registry values are currently being decoded. The ValueKey'
 | --- | --- |
 | 0x00000000 [REG_NONE] | Hex string |
 | 0x00000001 [REG_SZ] | u16 le or u8 decoded String |
+| 0x00000002 [REG_EXPAND_SZ] | u16 le or u8 decoded String |
+| 0x00000003 [REG_BINARY] | Hex string |
+| 0x00000004 [REG_DWORD_LITTLE_ENDIAN] | i32 |
+| 0x00000005 [REG_DWORD_BIG_ENDIAN] | i32 |
 | All Others | Hex string |
 
 ## JSON Key Output
