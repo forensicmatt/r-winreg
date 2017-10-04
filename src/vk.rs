@@ -2,6 +2,7 @@ use byteorder::{ReadBytesExt, LittleEndian, BigEndian};
 use serde::ser::{SerializeStruct};
 use utils;
 use hive::HBIN_START_OFFSET;
+use hivebin::{Cell,CellData};
 use errors::{RegError};
 use serde::{ser};
 use std::io::Read;
@@ -79,6 +80,7 @@ impl ser::Serialize for VkDataType {
 }
 
 // vk
+// TODO: Take into account db cell for data value!
 #[derive(Debug, Clone)]
 pub struct ValueKey {
     _offset: u64,
@@ -163,22 +165,44 @@ impl ValueKey {
                 HBIN_START_OFFSET + self.data_offset as u64
             ))?;
 
-            // read data
-            // datasize is the firt 4 bytes.
-            let data_size = reader.read_i32::<LittleEndian>()?.abs() - 4;
-            // lets verify that datasize here matches datasize in the struct
-            if data_size as u32 != self.get_size() {
-                RegError::validation_error(
-                    format!("data_size [{}] is not equal to the ValueKey.data_size [{}].",
-                    data_size,
-                    self.get_size())
-                );
-            }
-            let mut raw_buffer = vec![0; data_size as usize];
-            reader.read_exact(&mut raw_buffer)?;
+            let cell = match Cell::from_value_key(
+                &mut reader,
+                self
+            ){
+                Ok(cell) => cell,
+                Err(error) => {
+                    error!(
+                        "ValueKey<{}>.read_value_from_hive() Error Cell::from_value_key at offset {}. Error: {:?}\n{:?}",
+                        self._offset, HBIN_START_OFFSET + self.data_offset as u64,
+                        error, self
+                    );
+                    return Err(error);
+                }
+            };
 
-            // set data
-            self.data = Some(raw_buffer);
+            match cell.data {
+                CellData::DataBlock(data_block) => {
+                    let data = match data_block.get_data(&mut reader){
+                        Ok(data) => data,
+                        Err(error) => {
+                            panic!(
+                                "Unable to DataBlock<{}>.get_data() at ValueKey<{}>.read_value_from_hive(). Error: {:?}\n{:?}",
+                                data_block._offset,self._offset,error,self
+                            );
+                        }
+                    };
+
+                    self.data = Some(data);
+                    // panic!("read_value_from_hive unhandled cell data type: {:?}",cell);
+                },
+                CellData::Raw(rd) => {
+                    self.data = Some(rd);
+                },
+                _ => {
+                    error!("read_value_from_hive unhandled cell data type: {:?}",cell);
+                    panic!("read_value_from_hive unhandled cell data type: {:?}",cell);
+                }
+            }
 
             Ok(true)
         } else {
@@ -198,8 +222,14 @@ impl ValueKey {
     }
 
     pub fn decode_data(&self)->Option<Data>{
+        // Check if data is a db record
+        // If it is, we will need to jump to multiple places to read data.
         match self.data {
             Some(ref data) => {
+                if self.get_size() > data.len() as u32 {
+                    panic!("Size is less than data: {} > {}\n{:?}",self.get_size(),data.len(),self);
+                }
+
                 match self.data_type.0 {
                     0x00000000 => { //REG_NONE
                         return Some(
@@ -207,6 +237,7 @@ impl ValueKey {
                         );
                     },
                     0x00000001 => { //REG_SZ
+                        // Value has possible null terminator, but is not guaranteed
                         if self.flags.contains(VkFlags::VK_VALUE_COMP_NAME) {
                             let d_size = self.get_size();
 
@@ -214,10 +245,9 @@ impl ValueKey {
                                 return None;
                             }
 
-                            let value = match utils::read_string_u16_till_null(
-                                Cursor::new(
+                            let value = match utils::read_utf16(
                                     &data[0..d_size as usize].to_vec()
-                                ))
+                                )
                             {
                                 Ok(value) => {
                                     value
@@ -263,10 +293,9 @@ impl ValueKey {
                                 return None;
                             }
 
-                            let value = match utils::read_string_u16_till_null(
-                                Cursor::new(
+                            let value = match utils::read_utf16(
                                     &data[0..d_size as usize].to_vec()
-                                ))
+                                )
                             {
                                 Ok(value) => {
                                     value
@@ -350,8 +379,6 @@ impl ValueKey {
                 return None;
             }
         }
-
-        None
     }
 }
 impl ser::Serialize for ValueKey {

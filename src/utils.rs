@@ -1,5 +1,6 @@
 use byteorder::{ReadBytesExt, LittleEndian};
 use encoding::all::UTF_16LE;
+use encoding::all::ASCII;
 use encoding::{Encoding, DecoderTrap};
 use errors::{RegError};
 use serde::{ser};
@@ -47,6 +48,21 @@ pub fn to_hex_string(bytes: &Vec<u8>) -> String {
         .map(|b| format!("{:02X}", b))
         .collect();
     strs.join("")
+}
+
+pub fn ascii_from_u8_vec(bytes: &Vec<u8>) -> Result<String,RegError> {
+    let ascii_string = match ASCII.decode(bytes,DecoderTrap::Ignore) {
+        Ok(ascii) => ascii,
+        Err(error) => {
+            return Err(
+                RegError::ascii_decode_error(
+                    format!("Error decoding ascii. [{}]",error)
+                )
+            )
+        }
+    };
+
+    Ok(ascii_string)
 }
 
 pub fn uft16_from_u8_vec(bytes: &Vec<u8>) -> Result<String,RegError> {
@@ -116,6 +132,30 @@ pub fn read_string_u16_till_null<R: Read>(mut reader: R) -> Result<String,RegErr
     Ok(utf16_string)
 }
 
+pub fn read_utf16(buffer: &Vec<u8>) -> Result<String,RegError> {
+    let mut end_index = buffer.len();
+
+    // We need to check if the end of the buffer has null
+    let buff_len = buffer.len();
+    if buff_len >= 2 {
+        // We have at least two bytes
+        if buffer[buff_len-1] == 0 && buffer[buff_len-2] == 0 {
+            // last byte is null terminator
+            end_index -= 2;
+        }
+    }
+
+    let utf16_string = match UTF_16LE.decode(&buffer[0..end_index],DecoderTrap::Ignore) {
+        Ok(utf16) => utf16,
+        Err(error) => return Err(
+            RegError::utf16_decode_error(
+                format!("{}",error)
+            )
+        )
+    };
+    Ok(utf16_string)
+}
+
 pub fn get_u8_vec<R: Read>(mut reader: R) -> Result<Vec<u8>,Error> {
     let mut string_vec: Vec<u8> = Vec::new();
 
@@ -163,4 +203,22 @@ pub fn get_u16_vec<R: Read>(mut reader: R) -> Result<Vec<u16>,Error> {
     }
 
     Ok(string_vec)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_utf16() {
+        let buffer_no_null: &[u8] = &[
+            0x54,0x00,0x65,0x00,0x73,0x00,0x74,0x00
+        ];
+        assert_eq!("Test", read_utf16(&buffer_no_null.to_vec()).unwrap());
+
+        let buffer_null: &[u8] = &[
+            0x54,0x00,0x65,0x00,0x73,0x00,0x74,0x00,0x00,0x00
+        ];
+        assert_eq!("Test", read_utf16(&buffer_null.to_vec()).unwrap());
+    }
 }

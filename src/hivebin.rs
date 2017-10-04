@@ -38,7 +38,7 @@ impl HiveBin{
 
         let mut count = 0;
         loop {
-            let cell = match Cell::new(&mut cell_cursor, false){
+            let cell = match Cell::new(&mut cell_cursor){
                 Ok(cell) => cell,
                 Err(error) => {
                     error!("{:?}",error);
@@ -138,18 +138,16 @@ impl HiveBinHeader {
 #[derive(Serialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum CellData{
-    UnhandledCellData(UnhandledCellData),
-    UnknownData(UnhandledCellData),
+    Raw(Vec<u8>),
     IndexLeaf(IndexLeaf),
     FastLeaf(FastLeaf),
-    // HashLeaf(),
-    // IndexRoot(),
+    HashLeaf(HashLeaf),
+    RootIndex(RootIndex),
     NodeKey(NodeKey),
     ValueKey(vk::ValueKey),
     ValueData(vk::ValueData),
     SecurityKey(SecurityKey),
-    // BigData(),
-    None
+    DataBlock(DataBlock)
 }
 
 #[derive(Clone)]
@@ -203,7 +201,7 @@ pub struct Cell{
     pub data: CellData
 }
 impl Cell {
-    pub fn new<Rs: Read+Seek>(mut reader: Rs, is_value_data: bool) -> Result<Cell,RegError> {
+    pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<Cell,RegError> {
         let _offset = reader.seek(SeekFrom::Current(0))?;
         let size = reader.read_i32::<LittleEndian>()?;
 
@@ -213,99 +211,183 @@ impl Cell {
             buffer.as_mut_slice()
         )?;
 
-        if is_value_data {
-            let data = CellData::ValueData(
-                vk::ValueData(buffer)
-            );
+        let signature = CellSignature(
+            Cursor::new(&buffer[0..2]).read_u16::<LittleEndian>()?
+        );
 
-            Ok(
-                Cell {
-                    _offset: _offset,
-                    size: size,
-                    signature: None,
-                    data: data
-                }
-            )
-        } else {
-            let mut sig_buffer = vec![
-                buffer.remove(0),
-                buffer.remove(0)
-            ];
-            let signature = CellSignature::new(
-                Cursor::new(sig_buffer)
-            )?;
+        let data = match signature.0 {
+            26220 => { // 'lf'
+                CellData::FastLeaf(
+                    FastLeaf::new(
+                        Cursor::new(&buffer[2..]),
+                        _offset + 6
+                    )?
+                )
+            },
+            26732 => { // 'lh'
+                CellData::HashLeaf(
+                    HashLeaf::new(
+                        Cursor::new(&buffer[2..]),
+                        _offset + 6
+                    )?
+                )
+            },
+            26988 => { // 'li'
+                CellData::IndexLeaf(
+                    IndexLeaf::new(
+                        Cursor::new(&buffer[2..]),
+                        _offset + 6
+                    )?
+                )
+            },
+            26994 => { // 'ri'
+                CellData::RootIndex(
+                    RootIndex::new(
+                        Cursor::new(&buffer[2..]),
+                        _offset + 6
+                    )?
+                )
+            },
+            27502 => { // 'nk'
+                CellData::NodeKey(
+                    NodeKey::new(
+                        Cursor::new(&buffer[2..]),
+                        _offset + 6
+                    )?
+                )
+            },
+            27507 => { // 'sk'
+                CellData::SecurityKey(
+                    SecurityKey::new(
+                        Cursor::new(&buffer[2..]),
+                        _offset + 6
+                    )?
+                )
+            },
+            27510 => { // 'vk'
+                let mut value_key = vk::ValueKey::new(
+                    Cursor::new(&buffer[2..]),
+                    _offset + 6
+                )?;
 
+                CellData::ValueKey(
+                    value_key
+                )
+            },
+            25188 => { // 'db'
+                let mut db = DataBlock::new(
+                    Cursor::new(&buffer[2..]),
+                    _offset + 6
+                )?;
+                CellData::DataBlock(
+                    db
+                )
+            },
+            _ => {
+                // Raw data
+                CellData::Raw(
+                    buffer
+                )
+            }
+        };
+
+        let cell = Cell {
+            _offset: _offset,
+            size: size,
+            signature: Some(signature),
+            data: data
+        };
+
+        debug!("Cell<{}>::new() => {:?}",_offset,cell);
+
+        Ok(cell)
+    }
+
+    pub fn new_raw<Rs: Read+Seek>(mut reader: Rs) -> Result<Cell,RegError> {
+        let _offset = reader.seek(SeekFrom::Current(0))?;
+        let size = reader.read_i32::<LittleEndian>()?;
+
+        // Create the cell data buffer
+        let mut buffer = vec![0;(size.abs() - 4) as usize];
+        reader.read_exact(
+            buffer.as_mut_slice()
+        )?;
+
+        let data = CellData::Raw(
+            buffer
+        );
+
+        let cell = Cell {
+            _offset: _offset,
+            size: size,
+            signature: None,
+            data: data
+        };
+
+        Ok(cell)
+    }
+
+    pub fn from_value_key<Rs: Read+Seek>(mut reader: Rs, value_key: &vk::ValueKey) -> Result<Cell,RegError> {
+        let _offset = reader.seek(SeekFrom::Current(0))?;
+        let size = reader.read_i32::<LittleEndian>()?;
+
+        // Create the cell data buffer
+        let mut buffer = vec![0;(size.abs() - 4) as usize];
+        reader.read_exact(
+            buffer.as_mut_slice()
+        )?;
+
+        let signature = CellSignature(
+            Cursor::new(&buffer[0..2]).read_u16::<LittleEndian>()?
+        );
+
+        // We need to check if the size is greater than the current cell, if it is, we need
+        // to see if it is a db cell, otherwise error out because not sure what to do.
+        if value_key.data_size > size.abs() as u32 {
+            // all the data for this value key is not contained in this cell and we should check
+            // if it a db cell
             let data = match signature.0 {
-                26220 => { // 'lf'
-                    CellData::FastLeaf(
-                        FastLeaf::new(
-                            Cursor::new(buffer)
-                        )?
-                    )
-                },
-                26732 => { // 'lh'
-                    CellData::UnhandledCellData(
-                        UnhandledCellData(buffer)
-                    )
-                },
-                26988 => { // 'li'
-                    CellData::IndexLeaf(
-                        IndexLeaf::new(
-                            Cursor::new(buffer)
-                        )?
-                    )
-                },
-                26994 => { // 'ri'
-                    CellData::UnhandledCellData(
-                        UnhandledCellData(buffer)
-                    )
-                },
-                27502 => { // 'nk'
-                    CellData::NodeKey(
-                        NodeKey::new(
-                            Cursor::new(buffer),
-                            _offset + 6
-                        )?
-                    )
-                },
-                27507 => { // 'sk'
-                    CellData::SecurityKey(
-                        SecurityKey::new(
-                            Cursor::new(buffer),
-                            _offset + 6
-                        )?
-                    )
-                },
-                27510 => { // 'vk'
-                    let mut value_key = vk::ValueKey::new(
-                        Cursor::new(buffer),
+                25188 => { // 'db'
+                    let mut db = DataBlock::new(
+                        Cursor::new(&buffer[2..]),
                         _offset + 6
                     )?;
-
-                    CellData::ValueKey(
-                        value_key
-                    )
-                },
-                25188 => { // 'db'
-                    CellData::UnhandledCellData(
-                        UnhandledCellData(buffer)
+                    CellData::DataBlock(
+                        db
                     )
                 },
                 _ => {
-                    CellData::UnknownData(
-                        UnhandledCellData(buffer)
-                    )
+                    // If the data of the value is greater than the cell, we should have a db cell,
+                    // if its not a db cell, im not sure how to handle it.
+                    panic!(
+                        "Unhandled cell signature {} for Cell<{}>.from_value_key()",
+                        signature,_offset
+                    );
                 }
             };
 
-            Ok(
-                Cell {
-                    _offset: _offset,
-                    size: size,
-                    signature: Some(signature),
-                    data: data
-                }
-            )
+            let cell = Cell {
+                _offset: _offset,
+                size: size,
+                signature: Some(signature),
+                data: data
+            };
+
+            Ok(cell)
+        } else {
+            // Raw data
+            let data = CellData::Raw(
+                buffer
+            );
+
+            let cell = Cell {
+                _offset: _offset,
+                size: size,
+                signature: Some(signature),
+                data: data
+            };
+
+            Ok(cell)
         }
     }
 
@@ -318,26 +400,108 @@ impl Cell {
     }
 }
 
-// lf
+// db
 #[derive(Serialize, Debug, Clone)]
-pub struct FastLeaf{
+pub struct DataBlock{
+    #[serde(skip_serializing)]
+    pub _offset: u64,
+    pub segment_count: u16,
+    pub segments_offset: u32
+}
+impl DataBlock{
+    pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<DataBlock,RegError> {
+        let _offset = offset;
+
+        let segment_count = reader.read_u16::<LittleEndian>()?;
+        let segments_offset = reader.read_u32::<LittleEndian>()?;
+
+        let data_block = DataBlock{
+            _offset: _offset,
+            segment_count: segment_count,
+            segments_offset: segments_offset
+        };
+
+        Ok(data_block)
+    }
+
+    pub fn get_data<Rs: Read+Seek>(&self, mut reader: Rs)->Result<Vec<u8>,RegError> {
+        // This data could include slack!
+        let mut raw_data: Vec<u8> = Vec::new();
+
+        // Seek to the list offset
+        reader.seek(
+            SeekFrom::Start(HBIN_START_OFFSET + self.segments_offset as u64)
+        )?;
+        let mut segments_list: Vec<u32> = Vec::new();
+
+        //The segment_list is a cell in itself of raw data.
+        // the first 4 bytes are the cell size, followed by the offset list. This mean that
+        // data padding in the list is possible to get though not currently handled
+        let list_cell_size = reader.read_i32::<LittleEndian>()?;
+
+        // read offsets into the segments_list
+        for i in 0..self.segment_count {
+            let offset = reader.read_u32::<LittleEndian>()?;
+            debug!("DataBlock<{}> segment offset {}: {}",self._offset,i,offset);
+            segments_list.push(
+                offset
+            );
+        }
+
+        for segment_offset in segments_list {
+            // Seek to the data offset
+            reader.seek(
+                SeekFrom::Start(HBIN_START_OFFSET + segment_offset as u64)
+            )?;
+
+            // Read cell
+            let mut cell = Cell::new_raw(
+                &mut reader
+            )?;
+
+            match cell.data {
+                CellData::Raw(ref mut cell_data) => {
+                    raw_data.append(
+                        cell_data
+                    );
+                },
+                _ => {
+                    panic!("Datablock cell should only be Raw.");
+                }
+            }
+        }
+
+        Ok(raw_data)
+    }
+}
+
+// lh
+#[derive(Serialize, Debug, Clone)]
+pub struct HashLeaf{
+    #[serde(skip_serializing)]
+    _offset: u64,
     element_count: u16,
-    elements: Vec<FastElement>,
+    elements: Vec<HashElement>,
     next_index: usize
 }
-impl FastLeaf{
-    pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<FastLeaf,RegError> {
+impl HashLeaf{
+    pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<HashLeaf,RegError> {
+        let _offset = offset;
+
         let element_count = reader.read_u16::<LittleEndian>()?;
-        let mut elements: Vec<FastElement> = Vec::new();
+        let mut elements: Vec<HashElement> = Vec::new();
         let next_index = 0;
 
         for i in 0..element_count{
-            let element = FastElement::new(&mut reader)?;
+            let element = HashElement::new(
+                &mut reader
+            )?;
             elements.push(element);
         }
 
         Ok(
-            FastLeaf{
+            HashLeaf{
+                _offset: _offset,
                 element_count: element_count,
                 elements: elements,
                 next_index: next_index
@@ -357,13 +521,100 @@ impl FastLeaf{
                 SeekFrom::Start(HBIN_START_OFFSET + cell_offset as u64)
             )?;
 
-            let cell = Cell::new(&mut reader, false)?;
+            let cell = Cell::new(&mut reader)?;
             match cell.data {
                 CellData::NodeKey(nk) => {
                     Ok(Some(nk))
                 }
                 _ => {
-                    panic!("Not sure what to do here...")
+                    panic!(
+                        "unhandled data type in HashLeaf<{}>.get_next_node() => {:?}",
+                        self._offset,cell.data
+                    );
+                }
+            }
+        }
+    }
+}
+#[derive(Serialize, Debug, Clone)]
+pub struct HashElement{
+    node_offset: u32,
+    hash: Vec<u8>
+}
+impl HashElement{
+    pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<HashElement,RegError> {
+        let node_offset = reader.read_u32::<LittleEndian>()?;
+
+        let mut hash = vec![0;4];
+        reader.read_exact(&mut hash)?;
+
+        Ok(
+            HashElement{
+                node_offset: node_offset,
+                hash: hash
+            }
+        )
+    }
+
+    pub fn get_node_offset(&self)->u32{
+        self.node_offset
+    }
+}
+
+// lf
+#[derive(Serialize, Debug, Clone)]
+pub struct FastLeaf{
+    #[serde(skip_serializing)]
+    _offset: u64,
+    element_count: u16,
+    elements: Vec<FastElement>,
+    next_index: usize
+}
+impl FastLeaf{
+    pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<FastLeaf,RegError> {
+        let _offset = offset;
+
+        let element_count = reader.read_u16::<LittleEndian>()?;
+        let mut elements: Vec<FastElement> = Vec::new();
+        let next_index = 0;
+
+        for i in 0..element_count{
+            let element = FastElement::new(&mut reader)?;
+            elements.push(element);
+        }
+
+        Ok(
+            FastLeaf{
+                _offset: _offset,
+                element_count: element_count,
+                elements: elements,
+                next_index: next_index
+            }
+        )
+    }
+
+    pub fn get_next_node<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<Option<NodeKey>,RegError>{
+        // Check if current index is within offset list range
+        if self.next_index + 1 > self.elements.len() {
+            Ok(None)
+        } else {
+            let cell_offset = self.elements[self.next_index].get_node_offset();
+            self.next_index += 1;
+
+            reader.seek(
+                SeekFrom::Start(HBIN_START_OFFSET + cell_offset as u64)
+            )?;
+
+            let cell = Cell::new(&mut reader)?;
+            match cell.data {
+                CellData::NodeKey(nk) => {
+                    Ok(Some(nk))
+                }
+                _ => {
+                    panic!(
+                        "unhandled data type at FastLeaf<{}>.get_next_node() => {:?}",
+                        self._offset,cell
+                    );
                 }
             }
         }
@@ -377,7 +628,6 @@ pub struct FastElement{
 }
 impl FastElement{
     pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<FastElement,RegError> {
-        let _offset = reader.seek(SeekFrom::Current(0))?;
         let node_offset = reader.read_u32::<LittleEndian>()?;
 
         let mut utf8_buffer = vec![0;4];
@@ -402,12 +652,15 @@ impl FastElement{
 // li
 #[derive(Serialize, Debug, Clone)]
 pub struct IndexLeaf{
+    #[serde(skip_serializing)]
+    _offset: u64,
     element_count: u16,
     elements: Vec<u32>,
     next_index: usize
 }
 impl IndexLeaf{
-    pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<IndexLeaf,RegError> {
+    pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<IndexLeaf,RegError> {
+        let _offset = offset;
         let element_count = reader.read_u16::<LittleEndian>()?;
         let mut elements: Vec<u32> = Vec::new();
         let next_index = 0;
@@ -419,6 +672,7 @@ impl IndexLeaf{
 
         Ok(
             IndexLeaf{
+                _offset: _offset,
                 element_count: element_count,
                 elements: elements,
                 next_index: next_index
@@ -438,16 +692,138 @@ impl IndexLeaf{
                 SeekFrom::Start(HBIN_START_OFFSET + cell_offset as u64)
             )?;
 
-            let cell = Cell::new(&mut reader, false)?;
+            let cell = Cell::new(&mut reader)?;
             match cell.data {
                 CellData::NodeKey(nk) => {
                     Ok(Some(nk))
                 }
                 _ => {
-                    panic!("Not sure what to do here...")
+                    panic!(
+                        "unhandled data type at IndexLeaf<{}>.get_next_node() => {:?}",
+                        self._offset,cell
+                    );
                 }
             }
         }
+    }
+}
+
+// ri
+// This points to other lists of NK's
+#[derive(Serialize, Debug, Clone)]
+pub struct RootIndex{
+    _offset: u64,
+    element_count: u16,
+    elements: Vec<u32>,
+    next_index: usize,
+    current_cell: Option<Box<Cell>>
+}
+impl RootIndex{
+    pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<RootIndex,RegError> {
+        let _offset = offset;
+
+        let element_count = reader.read_u16::<LittleEndian>()?;
+        let mut elements: Vec<u32> = Vec::new();
+        let next_index = 0;
+        let current_cell = None;
+
+        for i in 0..element_count{
+            let element = reader.read_u32::<LittleEndian>()?;
+            elements.push(element);
+        }
+
+        let root_index = RootIndex{
+            _offset: _offset,
+            element_count: element_count,
+            elements: elements,
+            next_index: next_index,
+            current_cell: current_cell
+        };
+
+        Ok(root_index)
+    }
+
+    pub fn increment_current_cell<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<bool,RegError>{
+        if self.next_index + 1 > self.elements.len(){
+            return Ok(false);
+        }
+
+        // Get the cell offset for a node list
+        let cell_offset = self.elements[self.next_index];
+
+        // Seek to offset
+        reader.seek(
+            SeekFrom::Start(HBIN_START_OFFSET + cell_offset as u64)
+        )?;
+
+        let cell = Cell::new(&mut reader)?;
+
+        // Read cell
+        self.current_cell = Some(
+            Box::new(cell)
+        );
+
+        self.next_index += 1;
+
+        Ok(true)
+    }
+
+    pub fn get_next_node<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<Option<NodeKey>,RegError>{
+        loop {
+            // Check if current index is within offset list range
+            if self.next_index + 1 > self.elements.len() {
+                return Ok(None);
+            } else {
+                // Check if we need to set the current cell
+                if self.current_cell.is_none(){
+                    match self.increment_current_cell(&mut reader)? {
+                        false => {
+                            // No more indexes
+                            break;
+                        },
+                        true => {}
+                    }
+                }
+
+                let mut get_next_cell_flag = false;
+                match self.current_cell {
+                    Some(ref mut current_cell) => {
+                        match current_cell.data {
+                            CellData::HashLeaf(ref mut hl) => {
+                                let nk_option = hl.get_next_node(&mut reader)?;
+                                match nk_option {
+                                    Some(nk) => {
+                                        return Ok(Some(nk));
+                                    },
+                                    None => {
+                                        get_next_cell_flag = true
+                                    }
+                                }
+                            },
+                            _ => {
+                                panic!("Unhandled cell data type: {:?}",current_cell.data);
+                            }
+                        }
+                    },
+                    None => {
+                        panic!("self.current_cell should contain something...");
+                    }
+                }
+
+                if get_next_cell_flag {
+                    // No more nodes in the current list, lets go to the next list in the ri
+                    match self.increment_current_cell(&mut reader)? {
+                        false => {
+                            // No more indexes
+                            break;
+                        },
+                        true => {}
+                    }
+                }
+            }
+        }
+
+        Ok(None)
     }
 }
 
@@ -485,17 +861,17 @@ impl SecurityKey {
             Cursor::new(descriptor_buffer)
         )?;
 
-        Ok(
-            SecurityKey {
-                _offset: _offset,
-                unknown1: unknown1,
-                previous_sec_key_offset: previous_sec_key_offset,
-                next_sec_key_offset: next_sec_key_offset,
-                reference_count: reference_count,
-                descriptor_size: descriptor_size,
-                descriptor: descriptor
-            }
-        )
+        let security_key = SecurityKey {
+            _offset: _offset,
+            unknown1: unknown1,
+            previous_sec_key_offset: previous_sec_key_offset,
+            next_sec_key_offset: next_sec_key_offset,
+            reference_count: reference_count,
+            descriptor_size: descriptor_size,
+            descriptor: descriptor
+        };
+
+        Ok(security_key)
     }
 
     pub fn get_descriptor(&self)->SecurityDescriptor{
@@ -505,13 +881,17 @@ impl SecurityKey {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct ValueKeyList{
+    #[serde(skip_serializing)]
+    _offset: u64,
     size: i32,
     offset_list: Vec<u32>,
     number_of_values: u32,
     next_index: usize
 }
 impl ValueKeyList {
-    pub fn new<R: Read>(mut reader: R, number_of_values: u32)->Result<ValueKeyList,RegError>{
+    pub fn new<R: Read>(mut reader: R, offset: u64, number_of_values: u32)->Result<ValueKeyList,RegError>{
+        let _offset = offset;
+
         let size = reader.read_i32::<LittleEndian>()?;
         let abs_size = size.abs();
         let mut offset_list: Vec<u32> = Vec::new();
@@ -528,14 +908,15 @@ impl ValueKeyList {
             }
         }
 
-        Ok(
-            ValueKeyList{
-                size: size,
-                offset_list: offset_list,
-                number_of_values: number_of_values,
-                next_index: next_index
-            }
-        )
+        let value_key_list = ValueKeyList{
+            _offset: _offset,
+            size: size,
+            offset_list: offset_list,
+            number_of_values: number_of_values,
+            next_index: next_index
+        };
+
+        Ok(value_key_list)
     }
 
     pub fn get_next_value<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<Option<Cell>,RegError>{
@@ -575,12 +956,40 @@ impl ValueKeyList {
                     SeekFrom::Start(HBIN_START_OFFSET + cell_offset as u64)
                 )?;
 
-                let mut cell = Cell::new(&mut reader, false)?;
+                debug!("ValueKeyList<{}>.get_next_value()",self._offset);
+
+                let mut cell = Cell::new(
+                    &mut reader
+                )?;
+
                 match cell.data {
                     CellData::ValueKey(ref mut vk) => {
-                        vk.read_value_from_hive(&mut reader);
+                        match vk.read_value_from_hive(
+                            &mut reader
+                        ){
+                            Err(error) => {
+                                error!(
+                                    "ValueKeyList<{}>.read_value_from_hive() error: {:?}\n{:?}",
+                                    self._offset,error,vk
+                                );
+                                panic!(
+                                    "ValueKeyList<{}>.read_value_from_hive() error: {:?}\n{:?}",
+                                    self._offset,error,vk
+                                );
+                            },
+                            _ => {}
+                        }
+                    },
+                    _ => {
+                        error!(
+                            "ValueKeyList<{}>.get_next_value() Unhandled data type: {:?}",
+                            self._offset,cell
+                        );
+                        panic!(
+                            "ValueKeyList<{}>.get_next_value() Unhandled data type: {:?}",
+                            self._offset,cell
+                        );
                     }
-                    _ => {}
                 }
                 self.next_index += 1;
 
@@ -651,14 +1060,15 @@ pub struct NodeKey {
 
     // fields to maintain position of iteration
     #[serde(skip_serializing)]
-    value_list: Option<Box<ValueKeyList>>,
+    pub value_list: Option<Box<ValueKeyList>>,
     #[serde(skip_serializing)]
-    sub_key_list: Option<Box<Cell>>,
-    security_key: Option<SecurityKey>
+    pub sub_key_list: Option<Box<Cell>>,
+    pub security_key: Option<SecurityKey>
 }
 impl NodeKey {
     pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<NodeKey,RegError> {
         let _offset = offset;
+
         let flags = NodeKeyFlags::from_bits_truncate(
             reader.read_u16::<LittleEndian>()?
         );
@@ -685,9 +1095,14 @@ impl NodeKey {
 
         let mut name_buffer = vec![0; key_name_size as usize];
         reader.read_exact(name_buffer.as_mut_slice())?;
+
         let key_name = match flags.contains(NodeKeyFlags::KEY_COMP_NAME) {
-            true => String::from_utf8(name_buffer)?,
-            false => utils::uft16_from_u8_vec(&name_buffer)?
+            true => {
+                utils::ascii_from_u8_vec(&name_buffer)?
+            },
+            false => {
+                utils::uft16_from_u8_vec(&name_buffer)?
+            }
         };
 
         // 8 byte alignment
@@ -785,9 +1200,17 @@ impl NodeKey {
             HBIN_START_OFFSET + self.offset_value_list as u64
         ))?;
 
+        let offset = reader.seek(SeekFrom::Current(0))?;
+
         // get value list
         self.value_list = Some(
-            Box::new(ValueKeyList::new(&mut reader, self.num_values)?)
+            Box::new(
+                ValueKeyList::new(
+                    &mut reader,
+                    offset,
+                    self.num_values
+                )?
+            )
         );
 
         Ok(true)
@@ -799,9 +1222,15 @@ impl NodeKey {
             HBIN_START_OFFSET + self.offset_sub_key_list as u64
         ))?;
 
+        let cell = Cell::new(
+            &mut reader
+        )?;
+
+        debug!("NodeKey<{}>.set_sub_key_list(): {:?}",self._offset,cell);
+
         // get sub key list
         self.sub_key_list = Some(
-            Box::new(Cell::new(&mut reader, false)?)
+            Box::new(cell)
         );
 
         Ok(true)
@@ -814,7 +1243,10 @@ impl NodeKey {
                 HBIN_START_OFFSET + self.offset_security_key as u64
             ))?;
 
-            let cell = Cell::new(&mut reader, false)?;
+            let cell = Cell::new(
+                &mut reader
+            )?;
+
             self.security_key = match cell.data {
                 CellData::SecurityKey(sk) => Some(
                     sk
@@ -833,11 +1265,14 @@ impl NodeKey {
     pub fn get_next_value<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<Option<Cell>,RegError>{
         match self.value_list {
             Some(ref mut vl) => {
-                Ok(
-                    vl.get_next_value(&mut reader)?
-                )
+                let value = vl.get_next_value(
+                    &mut reader
+                )?;
+                Ok(value)
             },
-            None => Ok(None)
+            None => Ok(
+                None
+            )
         }
     }
 
@@ -845,12 +1280,20 @@ impl NodeKey {
         match self.sub_key_list {
             Some(ref mut list) => {
                 match list.data {
+                    CellData::HashLeaf(ref mut hl) => {
+                        let nk = hl.get_next_node(&mut reader)?;
+                        Ok(nk)
+                    },
                     CellData::FastLeaf(ref mut lf) => {
                         let nk = lf.get_next_node(&mut reader)?;
                         Ok(nk)
                     },
-                    CellData::IndexLeaf(ref mut lf) => {
-                        let nk = lf.get_next_node(&mut reader)?;
+                    CellData::RootIndex(ref mut ri) => {
+                        let nk = ri.get_next_node(&mut reader)?;
+                        Ok(nk)
+                    },
+                    CellData::IndexLeaf(ref mut li) => {
+                        let nk = li.get_next_node(&mut reader)?;
                         Ok(nk)
                     },
                     _ => {
@@ -864,26 +1307,5 @@ impl NodeKey {
 
     pub fn get_sec_key(&self)->Option<SecurityKey>{
             self.security_key.clone()
-    }
-}
-
-#[derive(Clone)]
-pub struct UnhandledCellData(pub Vec<u8>);
-impl fmt::Debug for UnhandledCellData {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{:?}",
-            utils::to_hex_string(&self.0),
-        )
-    }
-}
-impl ser::Serialize for UnhandledCellData {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: ser::Serializer
-    {
-        serializer.serialize_str(
-            &format!("{}", utils::to_hex_string(&self.0))
-        )
     }
 }

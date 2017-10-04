@@ -80,9 +80,11 @@ impl Hive {
             SeekFrom::Start(absolute_offset)
         )?;
 
-        Ok(
-            Cell::new(&mut self.source, false)?
-        )
+        let cell = Cell::new(
+            &mut self.source
+        )?;
+
+        Ok(cell)
     }
 
     pub fn get_next_hbin(&mut self)->Result<Option<HiveBin>,RegError>{
@@ -131,7 +133,7 @@ impl Iterator for Hive {
             let cell_key_node = match self.get_cell_at_offset(node_offset) {
                 Ok(cell_key_node) => cell_key_node,
                 Err(error) => {
-                    panic!("{}",error);
+                    panic!("get_cell_at_offset error: {}",error);
                 }
             };
 
@@ -159,18 +161,28 @@ impl Iterator for Hive {
                     // Check if security key has been read
                     if current_node.has_sec_key(){
                         if current_node.needs_sec_key() {
-                            current_node.set_sec_key(
+                            match current_node.set_sec_key(
                                 &mut self.source
-                            );
+                            ){
+                                Err(error) => {
+                                    panic!("set_sec_key error: {}",error);
+                                },
+                                _ => {}
+                            }
                         }
                     }
 
                     // Check if the current node had values
                     if current_node.has_values(){
                         if current_node.needs_value_list() {
-                            current_node.set_value_list(
+                            match current_node.set_value_list(
                                 &mut self.source
-                            );
+                            ){
+                                Err(error) => {
+                                    panic!("set_value_list error: {}",error);
+                                },
+                                _ => {}
+                            }
                         }
 
                         match current_node.get_next_value(&mut self.source) {
@@ -181,7 +193,9 @@ impl Iterator for Hive {
                                             CellData::ValueKey(value) => {
                                                 let descriptor: Option<SecurityDescriptor> = match current_node.get_sec_key() {
                                                     Some(sec_key) => {
-                                                        Some(sec_key.get_descriptor())
+                                                        Some(
+                                                            sec_key.get_descriptor()
+                                                        )
                                                     },
                                                     None => None
                                                 };
@@ -199,11 +213,13 @@ impl Iterator for Hive {
                                             }
                                         }
                                     },
-                                    None => {}
+                                    None => {
+
+                                    }
                                 }
                             },
                             Err(error) => {
-                                panic!("{}",error);
+                                panic!("get_next_value error: {}",error);
                             }
                         }
                     }
@@ -211,15 +227,20 @@ impl Iterator for Hive {
                     // Check if the current node has sub keys
                     if current_node.has_sub_keys(){
                         if current_node.needs_sub_key_list() {
-                            current_node.set_sub_key_list(
+                            match current_node.set_sub_key_list(
                                 &mut self.source
-                            );
+                            ) {
+                                Err(error) => {
+                                    panic!("set_sub_key_list error: {}",error);
+                                },
+                                _ => {}
+                            }
                         }
 
                         let sub_node = match current_node.get_next_sub_key(&mut self.source) {
                             Ok(sub_node) => sub_node,
                             Err(error) => {
-                                panic!("{}",error);
+                                panic!("get_next_sub_key error: {}",error);
                             }
                         };
 

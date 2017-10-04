@@ -4,9 +4,6 @@ extern crate serde_json;
 extern crate seek_bufread;
 use rwinreg::hive;
 use rwinreg::hive::Hive;
-use rwinreg::hivebin::HiveBin;
-use rwinreg::errors::RegError;
-use seek_bufread::BufReader;
 
 fn test_hive_01() {
     let mut hive = Hive::new(".testdata/NTUSER.DAT").unwrap();

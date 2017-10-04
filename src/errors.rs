@@ -7,6 +7,7 @@ use std::fmt::Display;
 #[derive(Debug)]
 pub enum ErrorKind {
     IoError,
+    AsciiError,
     Utf16Error,
     FromUtf8Error,
     ValidationError,
@@ -26,6 +27,15 @@ impl RegError {
         RegError {
             message: format!("{}",err),
             kind: ErrorKind::Utf16Error,
+            trace: backtrace!()
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn ascii_decode_error(err: String)->Self{
+        RegError {
+            message: format!("{}",err),
+            kind: ErrorKind::AsciiError,
             trace: backtrace!()
         }
     }
