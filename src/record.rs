@@ -20,6 +20,6 @@ impl Record {
 
     pub fn set_fullpath(&mut self, path: String){
         let name = self.value.get_name();
-        self.fullpath = vec![path,self.value.get_name()].join("/");
+        self.fullpath = vec![path,self.value.get_name()].join("\\");
     }
 }
