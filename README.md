@@ -78,5 +78,8 @@ The following are how registry values are currently being decoded. The ValueKey'
 }
 ```
 
+#### rwinreg 0.1.1 (2017-10-04)
+- Changed key paths to use '\\' as path separator.
+
 #### rwinreg 0.1.0 (2017-10-04)
 - Added support for all Cell types

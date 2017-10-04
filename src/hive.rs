@@ -120,7 +120,7 @@ impl Hive {
     }
 
     fn get_full_path(&self)->String{
-        self.path_stack.join("/")
+        self.path_stack.join("\\")
     }
 }
 
