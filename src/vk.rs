@@ -2,7 +2,7 @@ use byteorder::{ReadBytesExt, LittleEndian, BigEndian};
 use serde::ser::{SerializeStruct};
 use utils;
 use hive::HBIN_START_OFFSET;
-use hivebin::{Cell,CellData};
+use cell::{Cell,CellData};
 use errors::{RegError};
 use serde::{ser};
 use std::io::Read;

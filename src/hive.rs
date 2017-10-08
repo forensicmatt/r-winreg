@@ -3,8 +3,8 @@ use seek_bufread::BufReader;
 use baseblock::BaseBlock;
 use record::Record;
 use hivebin::HiveBin;
-use hivebin::{Cell,CellData};
-use hivebin::{NodeKey};
+use cell::{Cell,CellData};
+use nk::{NodeKey};
 use rwinstructs::security::SecurityDescriptor;
 use errors::RegError;
 use std::io::{Seek,SeekFrom};
@@ -122,6 +122,10 @@ impl Hive {
     fn get_full_path(&self)->String{
         self.path_stack.join("\\")
     }
+
+    // fn get_node_by_name(&self,name: String){
+    //
+    // }
 }
 
 impl Iterator for Hive {

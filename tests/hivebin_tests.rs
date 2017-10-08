@@ -1,5 +1,6 @@
 extern crate rwinreg;
 use rwinreg::hivebin;
+use rwinreg::cell::{Cell,CellData};
 use std::io::BufReader;
 use std::fs::File;
 
@@ -21,13 +22,13 @@ fn hivebin_header_test_001() {
 fn hivebin_cell_nk_001() {
     let file = File::open(".testdata/NTUSER_4128_144_CELL_NK.DAT").unwrap();
     let buf_reader = BufReader::new(file);
-    let cell = hivebin::Cell::new(buf_reader).unwrap();
+    let cell = Cell::new(buf_reader).unwrap();
 
     assert_eq!(cell.size, -144);
     let signature = cell.signature.unwrap();
     assert_eq!(signature.0, 27502);
     match cell.data {
-        hivebin::CellData::NodeKey(data) => {
+        CellData::NodeKey(data) => {
             assert_eq!(data.flags.bits(), 44);
             assert_eq!(data.last_written.0, 130269705849853298);
             assert_eq!(data.access_bits, 2);

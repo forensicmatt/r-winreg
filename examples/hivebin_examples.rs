@@ -2,6 +2,7 @@ extern crate rwinreg;
 extern crate env_logger;
 extern crate serde_json;
 use rwinreg::hivebin;
+use rwinreg::cell::{Cell};
 use std::fs::File;
 
 fn hivebin_example_01() {
@@ -15,7 +16,7 @@ fn hivebin_example_01() {
 fn test_nk_01() {
     let file = File::open(".testdata/NTUSER_4128_144_CELL_NK.DAT").unwrap();
 
-    let key_node = hivebin::Cell::new(file).unwrap();
+    let key_node = Cell::new(file).unwrap();
     println!("{:#?}",key_node);
 
     let json_str = serde_json::to_string(&key_node).unwrap();
@@ -25,7 +26,7 @@ fn test_nk_01() {
 fn test_vk_01() {
     let file = File::open(".testdata/NTUSER_4680_40_CELL_VK.DAT").unwrap();
 
-    let key_node = hivebin::Cell::new(file).unwrap();
+    let key_node = Cell::new(file).unwrap();
     println!("{:#?}",key_node);
 
     let json_str = serde_json::to_string(&key_node).unwrap();
