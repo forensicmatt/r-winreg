@@ -5,12 +5,6 @@ extern crate seek_bufread;
 use rwinreg::hive;
 use rwinreg::hive::Hive;
 
-fn test_hive_get_key(){
-    let mut hive = Hive::new(".testdata/NTUSER.DAT").unwrap();
-    let key_name = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU";
-
-}
-
 fn test_hive_01() {
     let mut hive = Hive::new(".testdata/NTUSER.DAT").unwrap();
     println!("{:#?}",hive);
@@ -33,7 +27,7 @@ fn test_hive_01() {
                 println!("{:?}",error);
             }
         }
-            hbin_result = hive.get_next_hbin();
+        hbin_result = hive.get_next_hbin();
     }
 }
 
@@ -56,8 +50,7 @@ fn test_sig_01() {
 
 fn main(){
     env_logger::init().unwrap();
-    // test_hive_get_key();
-    // test_sig_01();
+    test_sig_01();
     test_hive_02();
-    // test_hive_01();
+    test_hive_01();
 }
