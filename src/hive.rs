@@ -68,6 +68,20 @@ impl Hive {
         )
     }
 
+    pub fn get_root_node(&mut self) -> Result<NodeKey,RegError>{
+        let root_node_offset: u64 = self.baseblock.get_root_offset() as u64;
+
+        let cell = self.get_cell_at_offset(root_node_offset)?;
+        match cell.data {
+            CellData::NodeKey(nk) => {
+                return Ok(nk)
+            },
+            _ => {
+                panic!("Root key is not a NodeKey: {:?}",cell.data);
+            }
+        }
+    }
+
     pub fn set_next_node_offset(&mut self, offset: u64){
         self.next_node_offset = offset - HBIN_START_OFFSET;
     }
