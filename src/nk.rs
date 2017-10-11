@@ -328,32 +328,6 @@ impl NodeKey {
         }
     }
 
-    pub fn get_key_by_name<Rs: Read+Seek>(
-        &mut self, mut reader: Rs, name: String
-    )->Result<NodeKey,RegError>{
-        loop {
-            let sub_key_result = self.get_next_sub_key(&mut reader)?;
-            match sub_key_result {
-                Some(sub_key) => {
-                    // Check the sub key name
-                    if sub_key.key_name.to_lowercase() == name.to_lowercase() {
-                        return Ok(sub_key)
-                    } else {
-                        continue
-                    }
-                }
-                None => {
-                    // No more sub keys
-                    let error = RegError::registry_key_not_found(
-                        format!("Could not find subkey with name: {}",name)
-                    );
-
-                    return Err(error);
-                }
-            }
-        }
-    }
-
     pub fn get_sec_key(&self)->Option<SecurityKey>{
             self.security_key.clone()
     }
