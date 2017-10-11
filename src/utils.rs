@@ -132,6 +132,33 @@ pub fn read_string_u16_till_null<R: Read>(mut reader: R) -> Result<String,RegErr
     Ok(utf16_string)
 }
 
+pub fn read_ascii(buffer: &Vec<u8>) -> Result<String,RegError> {
+    let mut end_index = buffer.len();
+
+    // We need to check if the end of the buffer has null
+    let buff_len = buffer.len();
+    if buff_len >= 1 {
+        // We have at least one bytes
+        if buffer[buff_len-1] == 0 {
+            // last byte is null terminator
+            end_index -= 1;
+        }
+    }
+
+    let ascii_string = match ASCII.decode(&buffer[0..end_index],DecoderTrap::Ignore) {
+        Ok(ascii) => ascii,
+        Err(error) => {
+            return Err(
+                RegError::ascii_decode_error(
+                    format!("Error decoding ascii. [{}]",error)
+                )
+            )
+        }
+    };
+
+    Ok(ascii_string)
+}
+
 pub fn read_utf16(buffer: &Vec<u8>) -> Result<String,RegError> {
     let mut end_index = buffer.len();
 
@@ -208,6 +235,19 @@ pub fn get_u16_vec<R: Read>(mut reader: R) -> Result<Vec<u16>,Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_read_ascii() {
+        let buffer_no_null: &[u8] = &[
+            0x54,0x65,0x73,0x74
+        ];
+        assert_eq!("Test", read_ascii(&buffer_no_null.to_vec()).unwrap());
+
+        let buffer_null: &[u8] = &[
+            0x54,0x65,0x73,0x74,0x00
+        ];
+        assert_eq!("Test", read_ascii(&buffer_null.to_vec()).unwrap());
+    }
 
     #[test]
     fn test_read_utf16() {

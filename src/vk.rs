@@ -111,7 +111,7 @@ impl ValueKey {
         let mut name_buffer = vec![0; value_name_size as usize];
         reader.read_exact(name_buffer.as_mut_slice())?;
         let value_name = match flags.contains(VkFlags::VK_VALUE_COMP_NAME) {
-            true => String::from_utf8(name_buffer)?,
+            true => utils::ascii_from_u8_vec(&name_buffer)?,
             false => utils::uft16_from_u8_vec(&name_buffer)?
         };
 
