@@ -1,18 +1,19 @@
-use errors::{RegError};
-// Cell Types
-use lists::{DataBlock,HashLeaf,FastLeaf,IndexLeaf,RootIndex};
-use vk::{ValueKey};
-use nk::{NodeKey};
-use sk::{SecurityKey};
-
-use serde::{ser};
-use byteorder::{ReadBytesExt, LittleEndian};
+use byteorder::{ReadBytesExt,ByteOrder,LittleEndian};
+use nk::NodeKey;
+use vk::ValueKey;
+use sk::SecurityKey;
+use lf::FastLeaf;
+use lh::HashLeaf;
+use li::IndexLeaf;
+use ri::RootIndex;
+use db::DataBlock;
+use errors::RegError;
+use serde::ser;
 use std::io::Read;
 use std::io::{Seek,SeekFrom};
-use std::io::{Cursor};
 use std::fmt;
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug)]
 #[serde(untagged)]
 pub enum CellData{
     Raw(Vec<u8>),
@@ -26,14 +27,10 @@ pub enum CellData{
     DataBlock(DataBlock)
 }
 
-#[derive(Clone)]
-pub struct CellSignature(pub u16);
+pub struct CellSignature(u16);
 impl CellSignature {
-    pub fn new<R: Read>(mut reader: R) -> Result<CellSignature,RegError> {
-        let value = reader.read_u16::<LittleEndian>()?;
-        Ok(
-            CellSignature(value)
-        )
+    pub fn new(value: u16) -> CellSignature {
+        CellSignature(value)
     }
 
     pub fn as_string(&self)->String{
@@ -46,8 +43,12 @@ impl CellSignature {
             27507 => "sk".to_string(),
             27510 => "vk".to_string(),
             25188 => "db".to_string(),
-            _ => format!("UNHANDLED_TYPE: 0x{:04X}",self.0)
+            _ => format!("0x{:04x}",self.0)
         }
+    }
+
+    pub fn as_u16(&self)->u16{
+        self.0
     }
 }
 impl fmt::Display for CellSignature {
@@ -68,212 +69,185 @@ impl ser::Serialize for CellSignature {
     }
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug)]
 pub struct Cell{
     #[serde(skip_serializing)]
     _offset: u64,
     pub size: i32,
-    pub signature: Option<CellSignature>,
-    pub data: CellData
+    pub data: Vec<u8>
 }
 impl Cell {
-    pub fn new<Rs: Read+Seek>(mut reader: Rs) -> Result<Cell,RegError> {
-        let _offset = reader.seek(SeekFrom::Current(0))?;
+    pub fn new<R: Read>(reader: &mut R, offset: u64) -> Result<Cell,RegError> {
         let size = reader.read_i32::<LittleEndian>()?;
-
-        // Create the cell data buffer
-        let mut buffer = vec![0;(size.abs() - 4) as usize];
+        let mut data = vec![0; (size.abs() - 4) as usize];
         reader.read_exact(
-            buffer.as_mut_slice()
+            data.as_mut_slice()
         )?;
 
-        let signature = CellSignature(
-            Cursor::new(&buffer[0..2]).read_u16::<LittleEndian>()?
-        );
+        Ok(
+            Cell {
+                _offset: offset,
+                size: size,
+                data: data
+            }
+        )
+    }
 
-        let data = match signature.0 {
-            26220 => { // 'lf'
-                CellData::FastLeaf(
-                    FastLeaf::new(
-                        Cursor::new(&buffer[2..]),
-                        _offset + 6
-                    )?
-                )
-            },
-            26732 => { // 'lh'
-                CellData::HashLeaf(
-                    HashLeaf::new(
-                        Cursor::new(&buffer[2..]),
-                        _offset + 6
-                    )?
-                )
-            },
-            26988 => { // 'li'
-                CellData::IndexLeaf(
-                    IndexLeaf::new(
-                        Cursor::new(&buffer[2..]),
-                        _offset + 6
-                    )?
-                )
-            },
-            26994 => { // 'ri'
-                CellData::RootIndex(
-                    RootIndex::new(
-                        Cursor::new(&buffer[2..]),
-                        _offset + 6
-                    )?
-                )
-            },
-            27502 => { // 'nk'
-                CellData::NodeKey(
-                    NodeKey::new(
-                        Cursor::new(&buffer[2..]),
-                        _offset + 6
-                    )?
-                )
-            },
-            27507 => { // 'sk'
-                CellData::SecurityKey(
-                    SecurityKey::new(
-                        Cursor::new(&buffer[2..]),
-                        _offset + 6
-                    )?
-                )
-            },
-            27510 => { // 'vk'
-                let mut value_key = ValueKey::new(
-                    Cursor::new(&buffer[2..]),
-                    _offset + 6
-                )?;
+    /// Get a cell at a given absolute offset.
+    ///
+    /// # Examples
+    ///
+    /// Getting a cell at a certain absolute offset.
+    ///
+    /// ```
+    /// use std::fs::File;
+    /// use rwinreg::cell::Cell;
+    /// use rwinreg::hive::HBIN_START_OFFSET;
+    ///
+    /// # fn test_get_cell_at_offset() {
+    /// let mut f = match File::open(".testdata/NTUSER.DAT"){
+    ///     Ok(f) => f,
+    ///     Err(e) => panic!(e)
+    /// };
+    /// let cell = match Cell::at_offset(&mut f, 32 + HBIN_START_OFFSET) {
+    ///     Ok(c) => c,
+    ///     Err(e) => panic!(e)
+    /// };
+    /// # }
+    /// ```
+    pub fn at_offset<Rs: Read+Seek>(reader: &mut Rs, offset: u64) -> Result<Cell,RegError> {
+        // Seek to offset
+        reader.seek(
+            SeekFrom::Start(offset)
+        )?;
+        let size = reader.read_i32::<LittleEndian>()?;
+        debug!("cell at offset {} with size {}",offset,size);
+        let mut data = vec![0; (size.abs() - 4) as usize];
+        reader.read_exact(
+            data.as_mut_slice()
+        )?;
 
-                CellData::ValueKey(
-                    value_key
+        Ok(
+            Cell {
+                _offset: offset,
+                size: size,
+                data: data
+            }
+        )
+    }
+
+    pub fn get_signature(&self)->CellSignature{
+        CellSignature::new(
+            LittleEndian::read_u16(&self.data[0..2])
+        )
+    }
+
+    pub fn get_data(&self)->Result<CellData,RegError>{
+        match self.get_signature().as_u16() {
+            26220 => { //lf
+                Ok(
+                    CellData::FastLeaf(
+                        FastLeaf::new(&self.data[..], self._offset + 4)?
+                    )
                 )
             },
-            25188 => { // 'db'
-                let mut db = DataBlock::new(
-                    Cursor::new(&buffer[2..]),
-                    _offset + 6
-                )?;
-                CellData::DataBlock(
-                    db
+            26732 => { //lh
+                Ok(
+                    CellData::HashLeaf(
+                        HashLeaf::new(&self.data[..], self._offset + 4)?
+                    )
+                )
+            },
+            26988 => { //li
+                Ok(
+                    CellData::IndexLeaf(
+                        IndexLeaf::new(&self.data[..], self._offset + 4)?
+                    )
+                )
+            },
+            26994 => { //ri
+                Ok(
+                    CellData::RootIndex(
+                        RootIndex::new(&self.data[..], self._offset + 4)?
+                    )
+                )
+            },
+            27502 => { //nk
+                Ok(
+                    CellData::NodeKey(
+                        NodeKey::new(&self.data[..], self._offset + 4)?
+                    )
+                )
+            },
+            27507 => { //sk
+                Ok(
+                    CellData::SecurityKey(
+                        SecurityKey::new(&self.data[..], self._offset + 4)?
+                    )
+                )
+
+            },
+            27510 => { //vk
+                Ok(
+                    CellData::ValueKey(
+                        ValueKey::new(&self.data[..], self._offset + 4)?
+                    )
+                )
+            },
+            25188 => { //db
+                Ok(
+                    CellData::DataBlock(
+                        DataBlock::new(&self.data[..], self._offset + 4)?
+                    )
                 )
             },
             _ => {
-                // Raw data
-                CellData::Raw(
-                    buffer
+                Ok(
+                    CellData::Raw(
+                        self.data.to_vec()
+                    )
                 )
             }
-        };
-
-        let cell = Cell {
-            _offset: _offset,
-            size: size,
-            signature: Some(signature),
-            data: data
-        };
-
-        debug!("Cell<{}>::new() => {:?}",_offset,cell);
-
-        Ok(cell)
-    }
-
-    pub fn new_raw<Rs: Read+Seek>(mut reader: Rs) -> Result<Cell,RegError> {
-        let _offset = reader.seek(SeekFrom::Current(0))?;
-        let size = reader.read_i32::<LittleEndian>()?;
-
-        // Create the cell data buffer
-        let mut buffer = vec![0;(size.abs() - 4) as usize];
-        reader.read_exact(
-            buffer.as_mut_slice()
-        )?;
-
-        let data = CellData::Raw(
-            buffer
-        );
-
-        let cell = Cell {
-            _offset: _offset,
-            size: size,
-            signature: None,
-            data: data
-        };
-
-        Ok(cell)
-    }
-
-    pub fn from_value_key<Rs: Read+Seek>(
-        mut reader: Rs, value_key: &ValueKey
-    ) -> Result<Cell,RegError> {
-        let _offset = reader.seek(SeekFrom::Current(0))?;
-        let size = reader.read_i32::<LittleEndian>()?;
-
-        // Create the cell data buffer
-        let mut buffer = vec![0;(size.abs() - 4) as usize];
-        reader.read_exact(
-            buffer.as_mut_slice()
-        )?;
-
-        let signature = CellSignature(
-            Cursor::new(&buffer[0..2]).read_u16::<LittleEndian>()?
-        );
-
-        // We need to check if the size is greater than the current cell, if it is, we need
-        // to see if it is a db cell, otherwise error out because not sure what to do.
-        if value_key.data_size > size.abs() as u32 {
-            // all the data for this value key is not contained in this cell and we should check
-            // if it a db cell
-            let data = match signature.0 {
-                25188 => { // 'db'
-                    let mut db = DataBlock::new(
-                        Cursor::new(&buffer[2..]),
-                        _offset + 6
-                    )?;
-                    CellData::DataBlock(
-                        db
-                    )
-                },
-                _ => {
-                    // If the data of the value is greater than the cell, we should have a db cell,
-                    // if its not a db cell, im not sure how to handle it.
-                    panic!(
-                        "Unhandled cell signature {} for Cell<{}>.from_value_key()",
-                        signature,_offset
-                    );
-                }
-            };
-
-            let cell = Cell {
-                _offset: _offset,
-                size: size,
-                signature: Some(signature),
-                data: data
-            };
-
-            Ok(cell)
-        } else {
-            // Raw data
-            let data = CellData::Raw(
-                buffer
-            );
-
-            let cell = Cell {
-                _offset: _offset,
-                size: size,
-                signature: Some(signature),
-                data: data
-            };
-
-            Ok(cell)
         }
     }
 
-    pub fn is_allocated(&self)->bool{
-        if self.size.is_negative() {
-            true
-        } else {
-            false
+    pub fn get_raw_data(&self)->CellData {
+        CellData::Raw(
+            self.data.to_vec()
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use std::io::Read;
+    use std::fs::File;
+
+    #[test]
+    fn cell() {
+        let mut file = File::open(".testdata/NTUSER_4680_40_CELL_VK.DAT").unwrap();
+        let mut buffer = Vec::new();
+
+        match file.read_to_end(&mut buffer){
+            Err(error)=>panic!("{:?}",error),
+            _ => {}
         }
+
+        let cell = match Cell::new(&mut Cursor::new(&buffer),0){
+            Ok(cell)=>cell,
+            Err(error)=>panic!("{:?}",error)
+        };
+
+        assert_eq!(cell.size, -40);
+        assert_eq!(cell.get_signature().as_string(), String::from("vk"));
+
+        let known_data: &[u8] = &[
+            0x76,0x6B,0x0A,0x00,0x54,0x00,0x00,0x00,0x80,0x30,0x00,0x00,0x01,0x00,0x00,0x00,
+            0x01,0x00,0x72,0x65,0x55,0x73,0x65,0x72,0x20,0x41,0x67,0x65,0x6E,0x74,0x00,0x00,
+            0x6C,0x66,0x01,0x00
+        ];
+        assert_eq!(&cell.data[..], known_data);
     }
 }

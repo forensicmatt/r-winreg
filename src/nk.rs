@@ -1,13 +1,15 @@
+use byteorder::{ByteOrder,LittleEndian};
 use rwinstructs::timestamp::{WinTimestamp};
-use cell::{Cell,CellData};
-use errors::{RegError};
-use sk::{SecurityKey};
+use errors::RegError;
 use hive::HBIN_START_OFFSET;
+use cell::Cell;
+use cell::CellData;
+use vk::ValueKey;
+use vk::ValueKeyList;
+use sk::SecurityKey;
 use utils;
-use byteorder::{ReadBytesExt, LittleEndian};
-use serde::{ser};
-use std::io::Read;
-use std::io::{Seek,SeekFrom};
+use serde::ser;
+use std::io::{Read,Seek};
 use std::fmt;
 
 bitflags! {
@@ -39,94 +41,80 @@ impl ser::Serialize for NodeKeyFlags {
     }
 }
 
-// nk
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug)]
 pub struct NodeKey {
     #[serde(skip_serializing)]
     _offset: u64,
-    pub flags: NodeKeyFlags,
-    pub last_written: WinTimestamp,
-    pub access_bits: u32,
-    pub offset_parent_key: u32,
-    pub num_sub_keys: u32, // node keys
-    pub num_volatile_sub_keys: u32,
-    pub offset_sub_key_list: u32, //0xffffffff = empty
-    pub offset_volatile_sub_key_list: u32, //0xffffffff = empty
-    pub num_values: u32, // value keys
-    pub offset_value_list: u32, //0xffffffff = empty
-    pub offset_security_key: u32, //0xffffffff = empty
-    pub offset_class_name: u32, //0xffffffff = empty
-    pub largest_sub_key_name_size: u32,
-    pub largest_sub_key_class_name_size: u32,
-    pub largest_value_name_size: u32,
-    pub largest_value_data_size: u32,
-    pub work_var: u32,
-    pub key_name_size: u16,
-    pub class_name_size: u16,
-    // 74 bytes
-    pub key_name: String,
-    // pub padding: utils::ByteArray // Padding due to 8 byte alignment of cell size. Sometimes contains remnant data
+    signature: u16,
+    flags: NodeKeyFlags,
+    last_written: WinTimestamp,
+    access_bits: u32,
+    offset_parent_key: u32,
+    num_sub_keys: u32, // node keys
+    num_volatile_sub_keys: u32,
+    offset_sub_key_list: u32, //0xffffffff = empty
+    offset_volatile_sub_key_list: u32, //0xffffffff = empty
+    num_values: u32, // value keys
+    offset_value_list: u32, //0xffffffff = empty
+    offset_security_key: u32, //0xffffffff = empty
+    offset_class_name: u32, //0xffffffff = empty
+    largest_sub_key_name_size: u32,
+    largest_sub_key_class_name_size: u32,
+    largest_value_name_size: u32,
+    largest_value_data_size: u32,
+    work_var: u32,
+    key_name_size: u16,
+    class_name_size: u16,
+    // 76 bytes
+    key_name: String,
+    padding: Vec<u8>,
 
-    // fields to maintain position of iteration
-    #[serde(skip_serializing)]
-    pub value_list: Option<Box<ValueKeyList>>,
-    #[serde(skip_serializing)]
-    pub sub_key_list: Option<Box<Cell>>,
-    pub security_key: Option<SecurityKey>
+    value_key_list: Option<Box<ValueKeyList>>,
+    sub_key_list: Option<Box<CellData>>,
+    security_key: Option<Box<SecurityKey>>
 }
 impl NodeKey {
-    pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<NodeKey,RegError> {
+    pub fn new(buffer: &[u8], offset: u64) -> Result<NodeKey,RegError> {
         let _offset = offset;
-
+        let signature = LittleEndian::read_u16(&buffer[0..2]);
         let flags = NodeKeyFlags::from_bits_truncate(
-            reader.read_u16::<LittleEndian>()?
+            LittleEndian::read_u16(&buffer[2..4])
         );
         let last_written = WinTimestamp(
-            reader.read_u64::<LittleEndian>()?
+            LittleEndian::read_u64(&buffer[4..12])
         );
-        let access_bits = reader.read_u32::<LittleEndian>()?;
-        let offset_parent_key = reader.read_u32::<LittleEndian>()?;
-        let num_sub_keys = reader.read_u32::<LittleEndian>()?;
-        let num_volatile_sub_keys = reader.read_u32::<LittleEndian>()?;
-        let offset_sub_key_list = reader.read_u32::<LittleEndian>()?;
-        let offset_volatile_sub_key_list = reader.read_u32::<LittleEndian>()?;
-        let num_values = reader.read_u32::<LittleEndian>()?;
-        let offset_value_list = reader.read_u32::<LittleEndian>()?;
-        let offset_security_key = reader.read_u32::<LittleEndian>()?;
-        let offset_class_name = reader.read_u32::<LittleEndian>()?;
-        let largest_sub_key_name_size = reader.read_u32::<LittleEndian>()?;
-        let largest_sub_key_class_name_size = reader.read_u32::<LittleEndian>()?;
-        let largest_value_name_size = reader.read_u32::<LittleEndian>()?;
-        let largest_value_data_size = reader.read_u32::<LittleEndian>()?;
-        let work_var = reader.read_u32::<LittleEndian>()?;
-        let key_name_size = reader.read_u16::<LittleEndian>()?;
-        let class_name_size = reader.read_u16::<LittleEndian>()?;
-
-        let mut name_buffer = vec![0; key_name_size as usize];
-        reader.read_exact(name_buffer.as_mut_slice())?;
+        let access_bits = LittleEndian::read_u32(&buffer[12..16]);
+        let offset_parent_key = LittleEndian::read_u32(&buffer[16..20]);
+        let num_sub_keys = LittleEndian::read_u32(&buffer[20..24]);
+        let num_volatile_sub_keys = LittleEndian::read_u32(&buffer[24..28]);
+        let offset_sub_key_list = LittleEndian::read_u32(&buffer[28..32]);
+        let offset_volatile_sub_key_list = LittleEndian::read_u32(&buffer[32..36]);
+        let num_values = LittleEndian::read_u32(&buffer[36..40]);
+        let offset_value_list = LittleEndian::read_u32(&buffer[40..44]);
+        let offset_security_key = LittleEndian::read_u32(&buffer[44..48]);
+        let offset_class_name = LittleEndian::read_u32(&buffer[48..52]);
+        let largest_sub_key_name_size = LittleEndian::read_u32(&buffer[52..56]);
+        let largest_sub_key_class_name_size = LittleEndian::read_u32(&buffer[56..60]);
+        let largest_value_name_size = LittleEndian::read_u32(&buffer[60..64]);
+        let largest_value_data_size = LittleEndian::read_u32(&buffer[64..68]);
+        let work_var = LittleEndian::read_u32(&buffer[68..72]);
+        let key_name_size = LittleEndian::read_u16(&buffer[72..74]);
+        let class_name_size = LittleEndian::read_u16(&buffer[74..76]);
 
         let key_name = match flags.contains(NodeKeyFlags::KEY_COMP_NAME) {
-            true => {
-                utils::ascii_from_u8_vec(&name_buffer)?
-            },
-            false => {
-                utils::uft16_from_u8_vec(&name_buffer)?
-            }
+            true => utils::read_ascii(&buffer[76..(76 + key_name_size) as usize])?,
+            false => utils::read_utf16(&buffer[76..(76 + key_name_size) as usize])?
         };
 
-        // 8 byte alignment
-        // let pad_size = 8 - ((_offset + 74 + key_name_size as u64) % 8);
-        // println!("pad_size: {}",pad_size);
-        // let mut padding_buffer = vec![0; pad_size as usize];
-        // reader.read_exact(padding_buffer.as_mut_slice())?;
-        // let padding = utils::ByteArray(padding_buffer);
-        let value_list = None;
+        let padding = buffer[(76 + key_name_size) as usize..].to_vec();
+        let value_key_list = None;
         let sub_key_list = None;
         let security_key = None;
 
         Ok(
             NodeKey {
                 _offset: _offset,
+                signature: signature,
                 flags: flags,
                 last_written: last_written,
                 access_bits: access_bits,
@@ -147,310 +135,183 @@ impl NodeKey {
                 key_name_size: key_name_size,
                 class_name_size: class_name_size,
                 key_name: key_name,
-                // padding: padding,
-                value_list: value_list,
+                padding: padding,
+                value_key_list: value_key_list,
                 sub_key_list: sub_key_list,
                 security_key: security_key
             }
         )
     }
 
-    pub fn get_name(&self)->String{
-        self.key_name.clone()
+    pub fn key_name(&self)->&String{
+        &self.key_name
     }
 
-    pub fn get_offset(&self)->u64{
-        self._offset
-    }
-
-    pub fn has_values(&self)->bool{
-        if self.offset_value_list == 0xffffffff {
-            false
-        } else {
-            true
+    pub fn get_next_value<Rs: Read+Seek>(&mut self, reader: &mut Rs)->Result<Option<ValueKey>,RegError>{
+        if self.offset_value_list == 4294967295 {
+            return Ok(None);
         }
-    }
 
-    pub fn has_sub_keys(&self)->bool{
-        if self.offset_sub_key_list == 0xffffffff {
-            false
-        } else {
-            true
-        }
-    }
-
-    pub fn has_sec_key(&self)->bool{
-        if self.offset_security_key == 0xffffffff {
-            false
-        } else {
-            true
-        }
-    }
-
-    pub fn needs_value_list(&self)->bool{
-        self.value_list.is_none()
-    }
-
-    pub fn needs_sub_key_list(&self)->bool{
-        self.sub_key_list.is_none()
-    }
-
-    pub fn needs_sec_key(&self)->bool{
-        if self.security_key.is_some() {
-            false
-        } else {
-            true
-        }
-    }
-
-    pub fn set_value_list<Rs: Read+Seek>(
-        &mut self, mut reader: Rs
-    )->Result<bool,RegError>{
-        // seek to list
-        reader.seek(SeekFrom::Start(
-            HBIN_START_OFFSET + self.offset_value_list as u64
-        ))?;
-
-        let offset = reader.seek(SeekFrom::Current(0))?;
-
-        // get value list
-        self.value_list = Some(
-            Box::new(
-                ValueKeyList::new(
-                    &mut reader,
-                    offset,
-                    self.num_values
-                )?
-            )
-        );
-
-        Ok(true)
-    }
-
-    pub fn set_sub_key_list<Rs: Read+Seek>(
-        &mut self, mut reader: Rs
-    )->Result<bool,RegError>{
-        // seek to cell
-        reader.seek(SeekFrom::Start(
-            HBIN_START_OFFSET + self.offset_sub_key_list as u64
-        ))?;
-
-        let cell = Cell::new(
-            &mut reader
-        )?;
-
-        debug!("NodeKey<{}>.set_sub_key_list(): {:?}",self._offset,cell);
-
-        // get sub key list
-        self.sub_key_list = Some(
-            Box::new(cell)
-        );
-
-        Ok(true)
-    }
-
-    pub fn set_sec_key<Rs: Read+Seek>(
-        &mut self, mut reader: Rs
-    )->Result<bool,RegError>{
-        if self.offset_security_key != 0xffffffff {
-            // seek to cell
-            reader.seek(SeekFrom::Start(
-                HBIN_START_OFFSET + self.offset_security_key as u64
-            ))?;
-
-            let cell = Cell::new(
-                &mut reader
+        if self.value_key_list.is_none(){
+            let cell = Cell::at_offset(
+                reader,
+                self.offset_value_list as u64 + HBIN_START_OFFSET
             )?;
+            self.value_key_list = Some(
+                Box::new(
+                    ValueKeyList::new(
+                        &cell.data,
+                        self.num_values,
+                        self.offset_value_list as u64
+                    )?
+                )
+            );
+        }
 
-            self.security_key = match cell.data {
-                CellData::SecurityKey(sk) => Some(
-                    sk
-                ),
-                _ => {
-                    panic!("Cell is not a security key.");
+        match self.value_key_list{
+            Some(ref mut value_key_list)=>{
+                match value_key_list.get_next_value(reader)?{
+                    Some(vk) => {
+                        Ok(Some(vk))
+                    },
+                    None => {
+                        Ok(None)
+                    }
                 }
-            };
-
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    pub fn get_next_value<Rs: Read+Seek>(
-        &mut self, mut reader: Rs
-    )->Result<Option<Cell>,RegError>{
-        match self.value_list {
-            Some(ref mut vl) => {
-                let value = vl.get_next_value(
-                    &mut reader
-                )?;
-                Ok(value)
             },
-            None => Ok(
-                None
-            )
+            _ => panic!("Should already have a value")
         }
     }
 
-    pub fn get_next_sub_key<Rs: Read+Seek>(
-        &mut self, mut reader: Rs
-    )->Result<Option<NodeKey>,RegError>{
-        if self.needs_sub_key_list(){
-            self.set_sub_key_list(&mut reader)?;
+    pub fn get_next_key<Rs: Read+Seek>(&mut self, reader: &mut Rs)->Result<Option<NodeKey>,RegError>{
+        if self.offset_sub_key_list == 4294967295 {
+            return Ok(None);
+        }
+
+        if self.sub_key_list.is_none(){
+            let cell = Cell::at_offset(
+                reader,
+                self.offset_sub_key_list as u64 + HBIN_START_OFFSET
+            )?;
+            self.sub_key_list = Some(
+                Box::new(cell.get_data()?)
+            );
         }
 
         match self.sub_key_list {
-            Some(ref mut list) => {
-                match list.data {
-                    CellData::HashLeaf(ref mut hl) => {
-                        let nk = hl.get_next_node(&mut reader)?;
-                        Ok(nk)
+            Some(ref mut cell_data) => {
+                match **cell_data {
+                    CellData::RootIndex(ref mut ri) => {
+                        return Ok(
+                            ri.get_next_key(reader)?
+                        );
                     },
                     CellData::FastLeaf(ref mut lf) => {
-                        let nk = lf.get_next_node(&mut reader)?;
-                        Ok(nk)
+                        return Ok(
+                            lf.get_next_key(reader)?
+                        );
                     },
-                    CellData::RootIndex(ref mut ri) => {
-                        let nk = ri.get_next_node(&mut reader)?;
-                        Ok(nk)
+                    CellData::HashLeaf(ref mut lh) => {
+                        return Ok(
+                            lh.get_next_key(reader)?
+                        );
                     },
                     CellData::IndexLeaf(ref mut li) => {
-                        let nk = li.get_next_node(&mut reader)?;
-                        Ok(nk)
+                        return Ok(
+                            li.get_next_key(reader)?
+                        );
                     },
-                    _ => {
-                        panic!("Unhandled list type: {:?}",list);
+                    ref other => {
+                        panic!("Unhandled sub key list: {:?}",other);
                     }
                 }
             },
-            None => Ok(None)
+            None => {
+                panic!("Subkey List is None.")
+            }
         }
     }
 
-    pub fn get_sec_key(&self)->Option<SecurityKey>{
-            self.security_key.clone()
-    }
-}
+    pub fn set_security_key<Rs: Read+Seek>(&mut self, reader: &mut Rs)->Result<(),RegError>{
+        if self.offset_security_key == 4294967295 {
+            return Ok(());
+        }
 
-#[derive(Serialize, Debug, Clone)]
-pub struct ValueKeyList{
-    #[serde(skip_serializing)]
-    _offset: u64,
-    size: i32,
-    offset_list: Vec<u32>,
-    number_of_values: u32,
-    next_index: usize
-}
-impl ValueKeyList {
-    pub fn new<R: Read>(mut reader: R, offset: u64, number_of_values: u32)->Result<ValueKeyList,RegError>{
-        let _offset = offset;
-
-        let size = reader.read_i32::<LittleEndian>()?;
-        let abs_size = size.abs();
-        let mut offset_list: Vec<u32> = Vec::new();
-        let next_index: usize = 0;
-
-        let mut bytes_read: i32 = 4;
-        loop {
-            let offset = reader.read_u32::<LittleEndian>()?;
-            offset_list.push(offset);
-            bytes_read += 4;
-
-            if bytes_read >= abs_size {
-                break;
+        let cell = Cell::at_offset(reader, self.offset_security_key as u64 + HBIN_START_OFFSET)?;
+        match cell.get_data()?{
+            CellData::SecurityKey(sk) => {
+                self.security_key = Some(Box::new(sk));
+            },
+            other => {
+                panic!("Unexpected SK type: {:?}",other);
             }
         }
 
-        let value_key_list = ValueKeyList{
-            _offset: _offset,
-            size: size,
-            offset_list: offset_list,
-            number_of_values: number_of_values,
-            next_index: next_index
+        Ok(())
+    }
+
+    pub fn get_security_key(&self)->&Option<Box<SecurityKey>>{
+        &self.security_key
+    }
+
+    pub fn get_last_written(&self)->&WinTimestamp{
+        &self.last_written
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cell::Cell;
+    use std::io::Read;
+    use std::io::Cursor;
+    use std::fs::File;
+
+    #[test]
+    fn nodekey() {
+        let mut file = File::open(".testdata/NTUSER_4128_144_CELL_NK.DAT").unwrap();
+        let mut buffer = Vec::new();
+
+        match file.read_to_end(&mut buffer){
+            Err(error)=>panic!("{:?}",error),
+            _ => {}
+        }
+
+        let cell = match Cell::new(&mut Cursor::new(&buffer),0){
+            Ok(cell)=>cell,
+            Err(error)=>panic!("{:?}",error)
         };
 
-        Ok(value_key_list)
-    }
+        let nk = match NodeKey::new(&cell.data,4){
+            Ok(nk)=>nk,
+            Err(error)=>panic!("{:?}",error)
+        };
 
-    pub fn get_next_value<Rs: Read+Seek>(&mut self, mut reader: Rs)->Result<Option<Cell>,RegError>{
-        // More offsets can exist in the offset list than there are in the number of ValueKeyList
-        // The extra offsets can some times point to valid data, othertimes it is garbage.
-        // TODO: Look for a way to try and recover values.
+        assert_eq!(nk.signature, 27502);
+        assert_eq!(nk.flags.bits(), 44);
+        assert_eq!(nk.last_written.0, 130269705849853298);
+        assert_eq!(nk.access_bits, 2);
+        assert_eq!(nk.offset_parent_key, 1928);
+        assert_eq!(nk.num_sub_keys, 13);
+        assert_eq!(nk.num_volatile_sub_keys, 1);
+        assert_eq!(nk.offset_sub_key_list, 2587704);
+        assert_eq!(nk.offset_volatile_sub_key_list, 2147484264);
+        assert_eq!(nk.num_values, 0);
+        assert_eq!(nk.offset_value_list, 4294967295);
+        assert_eq!(nk.offset_security_key, 7568);
+        assert_eq!(nk.offset_class_name, 4294967295);
+        assert_eq!(nk.largest_sub_key_name_size, 42);
+        assert_eq!(nk.largest_sub_key_class_name_size, 0);
+        assert_eq!(nk.largest_value_name_size, 0);
+        assert_eq!(nk.largest_value_data_size, 0);
+        assert_eq!(nk.work_var, 3342392);
+        assert_eq!(nk.key_name_size, 57);
+        assert_eq!(nk.class_name_size, 0);
+        assert_eq!(nk.key_name, String::from("CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"));
 
-        // Check if current index is within offset list range
-        loop {
-            let _offset = reader.seek(SeekFrom::Current(0))?;
-
-            if self.next_index == self.number_of_values as usize {
-                // For now excape out once we it the number of values
-                return Ok(None);
-            }
-
-            if self.next_index + 1 > self.offset_list.len() {
-                // Recovery is needed here... but for now we will exit if the index is past
-                // the number of values
-                if self.next_index + 1 == self.number_of_values as usize {
-                    return Ok(None);
-                }
-
-                // More possible recoverable values here
-                println!("I should not be here: {}",_offset);
-                return Ok(None);
-            } else {
-                let cell_offset = self.offset_list[self.next_index];
-
-                // Can we have cells that have 0 offset befor a cell that has a real offset?
-                if cell_offset == 0 {
-                    self.next_index += 1;
-                    continue;
-                }
-
-                reader.seek(
-                    SeekFrom::Start(HBIN_START_OFFSET + cell_offset as u64)
-                )?;
-
-                debug!("ValueKeyList<{}>.get_next_value()",self._offset);
-
-                let mut cell = Cell::new(
-                    &mut reader
-                )?;
-
-                match cell.data {
-                    CellData::ValueKey(ref mut vk) => {
-                        match vk.read_value_from_hive(
-                            &mut reader
-                        ){
-                            Err(error) => {
-                                error!(
-                                    "ValueKeyList<{}>.read_value_from_hive() error: {:?}\n{:?}",
-                                    self._offset,error,vk
-                                );
-                                panic!(
-                                    "ValueKeyList<{}>.read_value_from_hive() error: {:?}\n{:?}",
-                                    self._offset,error,vk
-                                );
-                            },
-                            _ => {}
-                        }
-                    },
-                    _ => {
-                        error!(
-                            "ValueKeyList<{}>.get_next_value() Unhandled data type: {:?}",
-                            self._offset,cell
-                        );
-                        panic!(
-                            "ValueKeyList<{}>.get_next_value() Unhandled data type: {:?}",
-                            self._offset,cell
-                        );
-                    }
-                }
-                self.next_index += 1;
-
-                return Ok(
-                    Some(cell)
-                );
-            }
-        }
+        let known_data: &[u8] = &[
+            0x00,0x39,0x00,0x31,0x00,0x45,0x00
+        ];
+        assert_eq!(&nk.padding[..], known_data);
     }
 }

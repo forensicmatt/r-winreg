@@ -1,58 +1,84 @@
-use errors::{RegError};
 use rwinstructs::security::{SecurityDescriptor};
-use byteorder::{ReadBytesExt, LittleEndian};
-use std::io::Read;
-use std::io::{Seek,SeekFrom};
-use std::io::{Cursor};
+use byteorder::{ByteOrder,LittleEndian};
+use errors::{RegError};
+use std::io::Cursor;
 
-// sk
 #[derive(Serialize, Debug, Clone)]
 pub struct SecurityKey {
-    #[serde(skip_serializing)]
     _offset: u64,
-    #[serde(skip_serializing)]
-    pub unknown1: u16,
-    #[serde(skip_serializing)]
-    pub previous_sec_key_offset: u32,
-    #[serde(skip_serializing)]
-    pub next_sec_key_offset: u32,
-    #[serde(skip_serializing)]
-    pub reference_count: u32,
-    #[serde(skip_serializing)]
-    pub descriptor_size: u32,
-    pub descriptor: SecurityDescriptor
+    signature: u16,
+    unknown1: u16,
+    previous_sec_key_offset: u32,
+    next_sec_key_offset: u32,
+    reference_count: u32,
+    descriptor_size: u32,
+    descriptor: SecurityDescriptor
 }
 impl SecurityKey {
-    pub fn new<Rs: Read+Seek>(mut reader: Rs, offset: u64) -> Result<SecurityKey,RegError> {
-        let _offset = offset;
-
-        let unknown1 = reader.read_u16::<LittleEndian>()?;
-        let previous_sec_key_offset = reader.read_u32::<LittleEndian>()?;
-        let next_sec_key_offset = reader.read_u32::<LittleEndian>()?;
-        let reference_count = reader.read_u32::<LittleEndian>()?;
-        let descriptor_size = reader.read_u32::<LittleEndian>()?;
-
-        let mut descriptor_buffer = vec![0; descriptor_size as usize];
-        reader.read_exact(descriptor_buffer.as_mut_slice())?;
+    pub fn new(buffer: &[u8], offset: u64) -> Result<SecurityKey,RegError> {
+        let signature = LittleEndian::read_u16(&buffer[0..2]);
+        let unknown1 = LittleEndian::read_u16(&buffer[2..4]);
+        let previous_sec_key_offset = LittleEndian::read_u32(&buffer[4..8]);
+        let next_sec_key_offset = LittleEndian::read_u32(&buffer[8..12]);
+        let reference_count = LittleEndian::read_u32(&buffer[12..16]);
+        let descriptor_size = LittleEndian::read_u32(&buffer[16..20]);
 
         let descriptor = SecurityDescriptor::new(
-            Cursor::new(descriptor_buffer)
+            Cursor::new(&buffer[20..])
         )?;
 
-        let security_key = SecurityKey {
-            _offset: _offset,
-            unknown1: unknown1,
-            previous_sec_key_offset: previous_sec_key_offset,
-            next_sec_key_offset: next_sec_key_offset,
-            reference_count: reference_count,
-            descriptor_size: descriptor_size,
-            descriptor: descriptor
-        };
-
-        Ok(security_key)
+        Ok(
+            SecurityKey {
+                _offset: offset,
+                signature: signature,
+                unknown1: unknown1,
+                previous_sec_key_offset: previous_sec_key_offset,
+                next_sec_key_offset: next_sec_key_offset,
+                reference_count: reference_count,
+                descriptor_size: descriptor_size,
+                descriptor: descriptor
+            }
+        )
     }
 
-    pub fn get_descriptor(&self)->SecurityDescriptor{
-        self.descriptor.clone()
+    pub fn get_descriptor(&self)->&SecurityDescriptor {
+        &self.descriptor
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cell::Cell;
+    use std::io::Cursor;
+    use std::io::Read;
+    use std::fs::File;
+
+    #[test]
+    fn securitykey() {
+        let mut file = File::open(".testdata/NTUSER_4768_184_CELL_SK.DAT").unwrap();
+        let mut buffer = Vec::new();
+
+        match file.read_to_end(&mut buffer){
+            Err(error)=>panic!("{:?}",error),
+            _ => {}
+        }
+
+        let cell = match Cell::new(&mut Cursor::new(&buffer),0){
+            Ok(cell)=>cell,
+            Err(error)=>panic!("{:?}",error)
+        };
+
+        let sk = match SecurityKey::new(&cell.data,4){
+            Ok(sk)=>sk,
+            Err(error)=>panic!("{:?}",error)
+        };
+
+        assert_eq!(sk.signature, 27507);
+        assert_eq!(sk.unknown1, 0);
+        assert_eq!(sk.previous_sec_key_offset, 1876000);
+        assert_eq!(sk.next_sec_key_offset, 7568);
+        assert_eq!(sk.reference_count, 84);
+        assert_eq!(sk.descriptor_size, 160);
     }
 }

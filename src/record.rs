@@ -1,25 +1,39 @@
-use vk::{ValueKey};
+use vk::ValueKey;
+use nk::NodeKey;
 use rwinstructs::security::SecurityDescriptor;
+use rwinstructs::timestamp::{WinTimestamp};
 
 #[derive(Serialize,Debug)]
 pub struct Record {
-    fullpath: String,
-    security: Option<SecurityDescriptor>,
-    value: ValueKey
+    pub fullpath: String,
+    pub nk_last_written: WinTimestamp,
+    pub valuekey: ValueKey,
+    pub security: Option<Box<SecurityDescriptor>>
 }
 impl Record {
-    pub fn new(value: ValueKey, sec_descriptor: Option<SecurityDescriptor>)->Record{
-        let fullpath = "".to_string();
+    pub fn new(path: &str, nk: &NodeKey, vk: ValueKey)->Record{
+        let mut fullpath = path.to_string();
+        fullpath.push_str(&format!("\\{}",vk.get_name()));
+        let mut security = None;
+
+        let nk_last_written = nk.get_last_written().clone();
+
+        match *nk.get_security_key() {
+            Some(ref sk) => {
+                security = Some(
+                    Box::new(
+                        sk.get_descriptor().clone()
+                    )
+                )
+            },
+            None => {}
+        }
 
         Record {
             fullpath: fullpath,
-            security: sec_descriptor,
-            value: value,
+            nk_last_written: nk_last_written,
+            valuekey: vk,
+            security: security
         }
-    }
-
-    pub fn set_fullpath(&mut self, path: String){
-        let name = self.value.get_name();
-        self.fullpath = vec![path,self.value.get_name()].join("\\");
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "rwinreg"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Matthew Seyer <https://github.com/forensicmatt/r-winreg>"]
 
 [lib]
@@ -11,15 +11,15 @@ clap = "2"
 log = "0.3"
 env_logger = "0.3"
 byteorder = "1"
-bitflags = "1.0"
-trace-error = "0.1.5"
+encoding = "0.2"
 serde = "0.9"
 serde_derive = "0.9"
 serde_json = "0.9"
-encoding = "0.2"
+trace-error = "0.1.5"
+bitflags = "1.0"
 seek_bufread = "~1.2"
 
 [dependencies.r-winstructs]
-version = "0.3.1"
+version = "0.3.2"
 branch = "master"
 git = "https://github.com/forensicmatt/r-winstructs"

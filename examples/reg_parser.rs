@@ -6,6 +6,7 @@ extern crate rwinreg;
 use rwinreg::hive;
 use clap::{App, Arg};
 use std::fs;
+use std::fs::File;
 
 fn process_directory(directory: &str) {
     for dir_reader in fs::read_dir(directory) {
@@ -46,7 +47,15 @@ fn process_directory(directory: &str) {
 fn process_file(filename: &str) -> bool {
     info!("processing file: {}",filename);
 
-    let hive = match hive::Hive::new(filename) {
+    let hive_fh = match File::open(filename){
+        Ok(fh) => fh,
+        Err(error) => {
+            error!("{} [error: {}]", filename, error);
+            return false;
+        }
+    };
+
+    let mut hive = match hive::Hive::from_source(hive_fh) {
         Ok(hive) => hive,
         Err(error) => {
             error!("{} [error: {}]", filename, error);
@@ -54,10 +63,28 @@ fn process_file(filename: &str) -> bool {
         }
     };
 
-    for value in hive {
-        let json_str = serde_json::to_string(&value).unwrap();
+    loop {
+        let record = match hive.get_next_value(){
+            Ok(option) => {
+                match option {
+                    Some(record) => record,
+                    None => {
+                        break;
+                    }
+                }
+            },
+            Err(error) => {
+                panic!("error: {}",error);
+            }
+        };
+        let json_str = serde_json::to_string(&record).unwrap();
         println!("{}",json_str);
     }
+
+    // for value in hive {
+    //     let json_str = serde_json::to_string(&value).unwrap();
+    //     println!("{}",json_str);
+    // }
 
     return true;
 }
@@ -81,7 +108,7 @@ fn main() {
         .required_unless("pipe")
         .takes_value(true);
 
-    let options = App::new("RusyReg")
+    let options = App::new("reg_parser")
         .version("for debug")
         .author("Matthew Seyer <https://github.com/forensicmatt/r-winreg>")
         .about("Registry Parser written in Rust.")
