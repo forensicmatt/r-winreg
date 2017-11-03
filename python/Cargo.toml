@@ -1,0 +1,25 @@
+[package]
+name = "pyrreg"
+version = "0.0.0"
+authors = ["matthew seyer <>"]
+
+[lib]
+name = "pyrreg"
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json = "0.9"
+
+[dependencies.cpython]
+version = "0.1"
+default-features = false
+features = ["python27-sys"]
+
+[dependencies.rwinreg]
+version = "0.*"
+path = ".."
+
+[dependencies.r-pyfio]
+version = "0.1.*"
+branch = "master"
+git = "https://github.com/forensicmatt/r-pyfio"
