@@ -7,7 +7,6 @@ use utils;
 pub struct BaseBlock {
     #[serde(skip_serializing)]
     _offset: u64,
-
     signature: u32,
     primary_seq_num: u32,
     secondary_seq_num: u32,
@@ -46,7 +45,6 @@ fn compute_checksum(buffer: &[u8;4096])->u32 {
 impl BaseBlock {
     pub fn new(buffer: &[u8;4096], offset: u64)->Result<BaseBlock,RegError> {
         let _offset = offset;
-
         let signature = LittleEndian::read_u32(&buffer[0..4]);
         let primary_seq_num = LittleEndian::read_u32(&buffer[4..8]);
         let secondary_seq_num = LittleEndian::read_u32(&buffer[8..12]);
