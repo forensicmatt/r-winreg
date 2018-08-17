@@ -23,10 +23,24 @@ pub struct BaseBlock {
     reserved1: Vec<u8>, //offset: 112;396
     checksum: u32,
     #[serde(skip_serializing)]
+    _calculated_checksum: u32,
+    #[serde(skip_serializing)]
     reserved2:  Vec<u8>, //offset: 512;3576
     boot_type: u32,
     boot_recover: u32
 }
+
+fn compute_checksum(buffer: &[u8;4096])->u32 {
+    let mut chk: u32 = 0;
+    // compute over first 508 bytes of block
+    for i in 0..127 {
+        let pos = i * 4;
+        let chunk = LittleEndian::read_u32(&buffer[pos..pos + 4]);
+        chk ^= chunk;
+    }
+    chk
+}
+
 
 impl BaseBlock {
     pub fn new(buffer: &[u8;4096], offset: u64)->Result<BaseBlock,RegError> {
@@ -55,7 +69,9 @@ impl BaseBlock {
         // 396 bytes: 112..508
         let reserved1 = buffer[112..508].to_vec();
 
+        // 4 bytes: 508..512
         let checksum = LittleEndian::read_u32(&buffer[508..512]);
+        let _calculated_checksum = compute_checksum(buffer);
 
         // 3576 bytes: 512..4088
         let reserved2 = buffer[512..4088].to_vec();
@@ -80,11 +96,16 @@ impl BaseBlock {
                 file_name: file_name,
                 reserved1: reserved1,
                 checksum: checksum,
+                _calculated_checksum: _calculated_checksum,
                 reserved2:  reserved2,
                 boot_type: boot_type,
                 boot_recover: boot_recover
             }
         )
+    }
+
+    pub fn verified(&self)->bool {
+        self._calculated_checksum == self.checksum
     }
 
     pub fn root_cell_offset(&self)->u32{
@@ -125,7 +146,10 @@ mod tests {
         assert_eq!(baseblock.hive_bins_data_size, 3563520);
         assert_eq!(baseblock.clustering_factor, 1);
         assert_eq!(baseblock.checksum, 1151707345);
+        assert_eq!(baseblock._calculated_checksum, baseblock.checksum);
         assert_eq!(baseblock.boot_type, 0);
         assert_eq!(baseblock.boot_recover, 0);
+
+        assert_eq!(baseblock.verified(), true);
     }
 }
