@@ -1,4 +1,5 @@
 use winstructs::security::{SecurityDescriptor};
+use winstructs::err::Error;
 use byteorder::{ByteOrder,LittleEndian};
 use errors::{RegError};
 use std::io::Cursor;
@@ -26,9 +27,14 @@ impl SecurityKey {
         let descriptor_size = LittleEndian::read_u32(&buffer[16..20]);
 
         let mut cursor = Cursor::new(&buffer[20..]);
-        let descriptor = SecurityDescriptor::from_stream(
+        let descriptor = match SecurityDescriptor::from_stream(
             &mut cursor
-        )?;
+        ) {
+            Ok(descriptor) => descriptor,
+            Err(why) => {
+                return Err(RegError::from(why));
+            }
+        };
 
         Ok(
             SecurityKey {

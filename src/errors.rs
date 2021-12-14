@@ -1,4 +1,5 @@
 use winstructs::security::{SecDescError};
+use winstructs::err::Error;
 use std::string::FromUtf8Error;
 use std::io;
 use std::fmt;
@@ -11,7 +12,8 @@ pub enum ErrorKind {
     Utf16Error,
     FromUtf8Error,
     ValidationError,
-    SecDescParseError
+    SecDescParseError,
+    UnknownAceType
 }
 
 #[derive(Debug)]
@@ -73,6 +75,18 @@ impl From<SecDescError> for RegError {
             message: format!("{:?}",err),
             kind: ErrorKind::SecDescParseError,
             trace: backtrace!()
+        }
+    }
+}
+impl From<Error> for RegError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::IoError{source} => RegError::from(source),
+            Error::UnknownAceType{ace_type} => Self {
+                message: format!("Unknown AceType: {}", ace_type),
+                kind: ErrorKind::UnknownAceType,
+                trace: backtrace!()
+            }
         }
     }
 }
