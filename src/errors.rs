@@ -16,7 +16,7 @@ pub enum ErrorKind {
     UnknownAceType
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub struct RegError {
     pub message: String,
     pub kind: ErrorKind,
