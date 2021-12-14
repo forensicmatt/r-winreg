@@ -1,5 +1,4 @@
 use winstructs::security::{SecurityDescriptor};
-use winstructs::err::Error;
 use byteorder::{ByteOrder,LittleEndian};
 use errors::{RegError};
 use std::io::Cursor;
