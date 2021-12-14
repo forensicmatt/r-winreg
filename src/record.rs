@@ -1,7 +1,8 @@
 use vk::ValueKey;
 use nk::NodeKey;
-use rwinstructs::security::SecurityDescriptor;
-use rwinstructs::timestamp::{WinTimestamp};
+use winstructs::security::SecurityDescriptor;
+use winstructs::timestamp::{WinTimestamp};
+use serde::Serialize;
 
 #[derive(Serialize,Debug)]
 pub struct Record {

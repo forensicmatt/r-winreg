@@ -1,7 +1,8 @@
-use rwinstructs::security::{SecurityDescriptor};
+use winstructs::security::{SecurityDescriptor};
 use byteorder::{ByteOrder,LittleEndian};
 use errors::{RegError};
 use std::io::Cursor;
+use serde::Serialize;
 
 #[derive(Serialize, Debug, Clone)]
 pub struct SecurityKey {
@@ -14,6 +15,7 @@ pub struct SecurityKey {
     descriptor_size: u32,
     descriptor: SecurityDescriptor
 }
+
 impl SecurityKey {
     pub fn new(buffer: &[u8], offset: u64) -> Result<SecurityKey,RegError> {
         let signature = LittleEndian::read_u16(&buffer[0..2]);
@@ -23,8 +25,9 @@ impl SecurityKey {
         let reference_count = LittleEndian::read_u32(&buffer[12..16]);
         let descriptor_size = LittleEndian::read_u32(&buffer[16..20]);
 
-        let descriptor = SecurityDescriptor::new(
-            Cursor::new(&buffer[20..])
+        let mut cursor = Cursor::new(&buffer[20..]);
+        let descriptor = SecurityDescriptor::from_stream(
+            &mut cursor
         )?;
 
         Ok(

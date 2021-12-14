@@ -5,6 +5,7 @@ use cell::Cell;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
+use serde::Serialize;
 
 // db
 #[derive(Serialize, Debug)]

@@ -1,4 +1,4 @@
-use rwinstructs::security::{SecDescError};
+use winstructs::security::{SecDescError};
 use std::string::FromUtf8Error;
 use std::io;
 use std::fmt;

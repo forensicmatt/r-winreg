@@ -6,6 +6,7 @@ use cell::Cell;
 use cell::CellData;
 use nk::NodeKey;
 use std::io::{Read,Seek};
+use serde::Serialize;
 
 #[derive(Serialize, Debug)]
 struct FastElement(u32,String);

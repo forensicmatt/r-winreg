@@ -10,6 +10,7 @@ use std::fmt;
 use std::io::Read;
 use std::io::Seek;
 use std::mem::transmute;
+use serde::Serialize;
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(untagged)]
