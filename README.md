@@ -1,3 +1,5 @@
+**This Project was for learning purposes and is not maintained.**
+
 # r-winreg
 Windows Registry Library (Does not use Windows API)
 
