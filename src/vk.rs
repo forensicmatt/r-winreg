@@ -192,6 +192,10 @@ impl ValueKey {
         &self.value_name
     }
 
+    pub fn get_data_type(&self) -> &VkDataType {
+        &self.data_type
+    }
+
     pub fn data_is_resident(&self)->bool {
         if self.data_size >> 31 == 0 {
             false
