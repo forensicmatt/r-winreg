@@ -7,12 +7,12 @@ fn get_root_node() {
 
     let mut hive = match Hive::from_source(file){
         Ok(h) => h,
-        Err(e) => panic!(e)
+        Err(e) => panic!("{}", e)
     };
 
     let node = match hive.get_root_node(){
         Ok(n) => n,
-        Err(e) => panic!(e)
+        Err(e) => panic!("{}", e)
     };
 
     println!("{:?}",node);

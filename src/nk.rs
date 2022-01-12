@@ -1,5 +1,5 @@
 use byteorder::{ByteOrder,LittleEndian};
-use rwinstructs::timestamp::{WinTimestamp};
+use winstructs::timestamp::{WinTimestamp};
 use errors::RegError;
 use hive::HBIN_START_OFFSET;
 use cell::Cell;
@@ -9,6 +9,7 @@ use vk::ValueKeyList;
 use sk::SecurityKey;
 use utils;
 use serde::ser;
+use serde::Serialize;
 use std::io::{Read,Seek};
 use std::fmt;
 
@@ -80,7 +81,7 @@ impl NodeKey {
         let flags = NodeKeyFlags::from_bits_truncate(
             LittleEndian::read_u16(&buffer[2..4])
         );
-        let last_written = WinTimestamp(
+        let last_written = WinTimestamp::from(
             LittleEndian::read_u64(&buffer[4..12])
         );
         let access_bits = LittleEndian::read_u32(&buffer[12..16]);
@@ -289,7 +290,7 @@ mod tests {
 
         assert_eq!(nk.signature, 27502);
         assert_eq!(nk.flags.bits(), 44);
-        assert_eq!(nk.last_written.0, 130269705849853298);
+        assert_eq!(nk.last_written.value(), 130269705849853298);
         assert_eq!(nk.access_bits, 2);
         assert_eq!(nk.offset_parent_key, 1928);
         assert_eq!(nk.num_sub_keys, 13);

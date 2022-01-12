@@ -1,6 +1,7 @@
-use rwinstructs::timestamp::{WinTimestamp};
+use winstructs::timestamp::{WinTimestamp};
 use byteorder::{ByteOrder,LittleEndian};
 use errors::RegError;
+use serde::Serialize;
 use utils;
 
 #[derive(Serialize,Debug)]
@@ -49,7 +50,7 @@ impl BaseBlock {
         let primary_seq_num = LittleEndian::read_u32(&buffer[4..8]);
         let secondary_seq_num = LittleEndian::read_u32(&buffer[8..12]);
         let last_written = Box::new(
-            WinTimestamp(
+            WinTimestamp::from(
                 LittleEndian::read_u64(&buffer[12..20])
             )
         );
@@ -137,7 +138,7 @@ mod tests {
         assert_eq!(baseblock.signature, 1718052210);
         assert_eq!(baseblock.primary_seq_num, 2810);
         assert_eq!(baseblock.secondary_seq_num, 2809);
-        assert_eq!(baseblock.last_written.0, 130216723045201708);
+        assert_eq!(baseblock.last_written.value(), 130216723045201708);
         assert_eq!(baseblock.major_version, 1);
         assert_eq!(baseblock.minor_version, 3);
         assert_eq!(baseblock.file_type, 0);

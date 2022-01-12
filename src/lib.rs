@@ -1,9 +1,8 @@
-#[macro_use] extern crate serde_derive;
 #[macro_use] extern crate trace_error;
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate log;
 extern crate seek_bufread;
-extern crate rwinstructs;
+extern crate winstructs;
 extern crate byteorder;
 extern crate encoding;
 extern crate serde;

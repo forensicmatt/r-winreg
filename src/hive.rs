@@ -8,6 +8,7 @@ use errors::RegError;
 use std::fs::File;
 use std::io::Read;
 use std::io::Seek;
+use serde::Serialize;
 
 pub const HBIN_START_OFFSET: u64 = 4096;
 

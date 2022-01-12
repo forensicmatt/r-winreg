@@ -1,6 +1,6 @@
 [package]
 name = "rwinreg"
-version = "0.2.0"
+version = "0.2.0-janstarke.3"
 authors = ["Matthew Seyer <https://github.com/forensicmatt/r-winreg>"]
 
 [lib]
@@ -12,14 +12,10 @@ log = "0.3"
 env_logger = "0.3"
 byteorder = "1"
 encoding = "0.2"
-serde = "0.9"
-serde_derive = "0.9"
-serde_json = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 trace-error = "0.1.5"
 bitflags = "1.0"
 seek_bufread = "~1.2"
-
-[dependencies.r-winstructs]
-version = "0.3.2"
-branch = "master"
-git = "https://github.com/forensicmatt/r-winstructs"
+thiserror = "1.0"
+winstructs = {git = "https://github.com/janstarke/winstructs", branch="feature/serialize", version="0.3.1-alpha.0-janstarke.1"}

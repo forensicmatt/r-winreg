@@ -10,6 +10,7 @@ use std::fmt;
 use std::io::Read;
 use std::io::Seek;
 use std::mem::transmute;
+use serde::Serialize;
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(untagged)]
@@ -189,6 +190,10 @@ impl ValueKey {
 
     pub fn get_name(&self)->&str {
         &self.value_name
+    }
+
+    pub fn get_data_type(&self) -> &VkDataType {
+        &self.data_type
     }
 
     pub fn data_is_resident(&self)->bool {

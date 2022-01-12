@@ -12,6 +12,7 @@ use serde::ser;
 use std::io::Read;
 use std::io::{Seek,SeekFrom};
 use std::fmt;
+use serde::Serialize;
 
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
